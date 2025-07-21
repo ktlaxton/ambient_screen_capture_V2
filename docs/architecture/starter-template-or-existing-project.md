@@ -1,5 +1,5 @@
 # Starter Template or Existing Project
 
-The architecture will be based on the standard "Blank App, Packaged (WinUI 3 in Desktop)" template provided within Visual Studio. This provides a best-practice foundation for a modern Windows desktop application using C# and WinUI 3.
+The architecture is based on a standard WPF (.NET 8) application template. This provides a proven, stable foundation for a modern Windows desktop application using C# and WPF, with excellent compatibility and tooling support.
 
 ---
