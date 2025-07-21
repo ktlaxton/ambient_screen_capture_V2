@@ -1,0 +1,1 @@
+C:\Users\ktlax\Projects\ambeint_screen_capture_V2\AmbientEffectsEngine\AmbientEffectsEngine.csproj;x64

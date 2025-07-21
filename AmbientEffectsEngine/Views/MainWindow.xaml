@@ -1,11 +1,105 @@
 <Window x:Class="AmbientEffectsEngine.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Ambient Effects Engine" Height="450" Width="800">
-    <Grid>
-        <TextBlock Text="Ambient Effects Engine" 
+        Title="Ambient Effects Engine" Height="450" Width="800"
+        MinWidth="600" MinHeight="300">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        
+        <!-- Header -->
+        <TextBlock Grid.Row="0" 
+                   Text="Ambient Effects Engine" 
+                   FontSize="28" 
+                   FontWeight="Bold"
                    HorizontalAlignment="Center" 
-                   VerticalAlignment="Center" 
-                   FontSize="24" />
+                   Margin="0,0,0,30" />
+        
+        <!-- Settings Panel -->
+        <StackPanel Grid.Row="1" MaxWidth="400" HorizontalAlignment="Center">
+            
+            <!-- Master On/Off Toggle -->
+            <Border Background="#F5F5F5" 
+                    BorderBrush="#DDDDDD" 
+                    BorderThickness="1" 
+                    CornerRadius="5" 
+                    Padding="15" 
+                    Margin="0,0,0,20">
+                <StackPanel>
+                    <TextBlock Text="Master Control" 
+                               FontSize="16" 
+                               FontWeight="SemiBold" 
+                               Margin="0,0,0,10"/>
+                    <CheckBox Name="EnabledCheckBox"
+                              Content="Enable Ambient Effects" 
+                              FontSize="14"
+                              IsChecked="{Binding IsEnabled, Mode=TwoWay}" />
+                </StackPanel>
+            </Border>
+            
+            <!-- Effect Style Selection -->
+            <Border Background="#F5F5F5" 
+                    BorderBrush="#DDDDDD" 
+                    BorderThickness="1" 
+                    CornerRadius="5" 
+                    Padding="15" 
+                    Margin="0,0,0,20">
+                <StackPanel>
+                    <TextBlock Text="Effect Style" 
+                               FontSize="16" 
+                               FontWeight="SemiBold" 
+                               Margin="0,0,0,10"/>
+                    <ComboBox Name="EffectStyleComboBox"
+                              ItemsSource="{Binding AvailableEffects}"
+                              SelectedItem="{Binding SelectedEffect, Mode=TwoWay}"
+                              DisplayMemberPath="Name"
+                              FontSize="14"
+                              Height="30" />
+                    <TextBlock Text="{Binding SelectedEffect.Description}" 
+                               FontSize="12" 
+                               FontStyle="Italic" 
+                               Foreground="#666666"
+                               Margin="0,5,0,0"/>
+                </StackPanel>
+            </Border>
+            
+            <!-- Audio Sensitivity -->
+            <Border Background="#F5F5F5" 
+                    BorderBrush="#DDDDDD" 
+                    BorderThickness="1" 
+                    CornerRadius="5" 
+                    Padding="15">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <TextBlock Text="Audio Sensitivity" 
+                                   FontSize="16" 
+                                   FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding AudioSensitivity, StringFormat='{}{0:P0}'}" 
+                                   FontSize="14" 
+                                   Foreground="#666666"
+                                   Margin="10,0,0,0"/>
+                    </StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Low" FontSize="12" Foreground="#666666" Margin="0,0,10,0"/>
+                        <Slider Name="AudioSensitivitySlider"
+                                Grid.Column="1"
+                                Minimum="0" 
+                                Maximum="1" 
+                                Value="{Binding AudioSensitivity, Mode=TwoWay}"
+                                TickFrequency="0.1" 
+                                IsSnapToTickEnabled="True"/>
+                        <TextBlock Grid.Column="2" Text="High" FontSize="12" Foreground="#666666" Margin="10,0,0,0"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+            
+        </StackPanel>
     </Grid>
 </Window>

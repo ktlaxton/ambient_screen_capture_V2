@@ -28,6 +28,10 @@ public partial class App : WpfApplication
         var screenCaptureService = _serviceProvider.GetRequiredService<IScreenCaptureService>();
         screenCaptureService.Start();
         
+        // Start audio capture service
+        var audioCaptureService = _serviceProvider.GetRequiredService<IAudioCaptureService>();
+        audioCaptureService.Start();
+        
         // The main window will be created automatically due to StartupUri
     }
 
@@ -35,6 +39,7 @@ public partial class App : WpfApplication
     {
         // Register services
         services.AddSingleton<IScreenCaptureService, ScreenCaptureService>();
+        services.AddSingleton<IAudioCaptureService, AudioCaptureService>();
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -42,6 +47,10 @@ public partial class App : WpfApplication
         // Stop screen capture
         var screenCaptureService = _serviceProvider?.GetService<IScreenCaptureService>();
         screenCaptureService?.Stop();
+        
+        // Stop audio capture
+        var audioCaptureService = _serviceProvider?.GetService<IAudioCaptureService>();
+        audioCaptureService?.Stop();
         
         _systemTrayService?.Shutdown();
         _serviceProvider?.Dispose();

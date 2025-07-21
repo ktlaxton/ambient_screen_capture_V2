@@ -1,0 +1,14 @@
+﻿<Window
+    x:Class="AmbientEffectsEngine.Views.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid>
+        <TextBlock x:ConnectionId='2' x:Name="AppTitle" 
+                   Text="Ambient Effects Engine" 
+                   HorizontalAlignment="Center" 
+                   VerticalAlignment="Center" 
+                   FontSize="24" />
+    </Grid>
+</Window>
+
