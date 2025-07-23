@@ -100,6 +100,61 @@
                 </StackPanel>
             </Border>
             
+            <!-- Monitor Setup Button -->
+            <Border Background="#F5F5F5" 
+                    BorderBrush="#DDDDDD" 
+                    BorderThickness="1" 
+                    CornerRadius="5" 
+                    Padding="15" 
+                    Margin="0,0,0,20">
+                <StackPanel>
+                    <TextBlock Text="Monitor Configuration" 
+                               FontSize="16" 
+                               FontWeight="SemiBold" 
+                               Margin="0,0,0,10"/>
+                    <Button Name="MonitorSetupButton"
+                            Content="Configure Monitors" 
+                            FontSize="14"
+                            Height="35"
+                            Click="MonitorSetupButton_Click"
+                            Background="#2196F3"
+                            Foreground="White"
+                            BorderThickness="0"
+                            Cursor="Hand">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}" 
+                                                    CornerRadius="3" 
+                                                    BorderThickness="{TemplateBinding BorderThickness}">
+                                                <ContentPresenter HorizontalAlignment="Center" 
+                                                                VerticalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="#1976D2"/>
+                                                </Trigger>
+                                                <Trigger Property="IsPressed" Value="True">
+                                                    <Setter Property="Background" Value="#1565C0"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <TextBlock Text="Select which monitors display ambient effects" 
+                               FontSize="12" 
+                               FontStyle="Italic" 
+                               Foreground="#666666"
+                               Margin="0,5,0,0"
+                               HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+            
         </StackPanel>
     </Grid>
 </Window>

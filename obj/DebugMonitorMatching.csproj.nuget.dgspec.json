@@ -1,0 +1,152 @@
+{
+  "format": 1,
+  "restore": {
+    "C:\\Users\\ktlax\\Projects\\ambeint_screen_capture_V2\\DebugMonitorMatching.csproj": {}
+  },
+  "projects": {
+    "C:\\Users\\ktlax\\Projects\\ambeint_screen_capture_V2\\AmbientEffectsEngine\\AmbientEffectsEngine.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\ktlax\\Projects\\ambeint_screen_capture_V2\\AmbientEffectsEngine\\AmbientEffectsEngine.csproj",
+        "projectName": "AmbientEffectsEngine",
+        "projectPath": "C:\\Users\\ktlax\\Projects\\ambeint_screen_capture_V2\\AmbientEffectsEngine\\AmbientEffectsEngine.csproj",
+        "packagesPath": "C:\\Users\\ktlax\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\ktlax\\Projects\\ambeint_screen_capture_V2\\AmbientEffectsEngine\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\ktlax\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0-windows"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0-windows7.0": {
+            "targetAlias": "net8.0-windows",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0-windows7.0": {
+          "targetAlias": "net8.0-windows",
+          "dependencies": {
+            "Microsoft.Extensions.DependencyInjection": {
+              "target": "Package",
+              "version": "[8.0.0, )"
+            },
+            "Microsoft.Extensions.Hosting": {
+              "target": "Package",
+              "version": "[8.0.0, )"
+            },
+            "NAudio": {
+              "target": "Package",
+              "version": "[2.2.1, )"
+            },
+            "System.Drawing.Common": {
+              "target": "Package",
+              "version": "[8.0.0, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            },
+            "Microsoft.WindowsDesktop.App": {
+              "privateAssets": "none"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.412/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Users\\ktlax\\Projects\\ambeint_screen_capture_V2\\DebugMonitorMatching.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\ktlax\\Projects\\ambeint_screen_capture_V2\\DebugMonitorMatching.csproj",
+        "projectName": "DebugMonitorMatching",
+        "projectPath": "C:\\Users\\ktlax\\Projects\\ambeint_screen_capture_V2\\DebugMonitorMatching.csproj",
+        "packagesPath": "C:\\Users\\ktlax\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\ktlax\\Projects\\ambeint_screen_capture_V2\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\ktlax\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0-windows"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0-windows7.0": {
+            "targetAlias": "net8.0-windows",
+            "projectReferences": {
+              "C:\\Users\\ktlax\\Projects\\ambeint_screen_capture_V2\\AmbientEffectsEngine\\AmbientEffectsEngine.csproj": {
+                "projectPath": "C:\\Users\\ktlax\\Projects\\ambeint_screen_capture_V2\\AmbientEffectsEngine\\AmbientEffectsEngine.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0-windows7.0": {
+          "targetAlias": "net8.0-windows",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            },
+            "Microsoft.WindowsDesktop.App.WindowsForms": {
+              "privateAssets": "none"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.412/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

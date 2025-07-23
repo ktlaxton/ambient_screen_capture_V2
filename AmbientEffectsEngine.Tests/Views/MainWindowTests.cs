@@ -1,7 +1,9 @@
+using System;
 using System.Threading;
 using Xunit;
 using AmbientEffectsEngine.Views;
 using AmbientEffectsEngine.ViewModels;
+using Moq;
 
 namespace AmbientEffectsEngine.Tests.Views
 {
@@ -19,7 +21,9 @@ namespace AmbientEffectsEngine.Tests.Views
             {
                 try
                 {
-                    window = new MainWindow();
+                    var viewModel = new MainViewModel();
+                    var mockServiceProvider = new Mock<IServiceProvider>();
+                    window = new MainWindow(viewModel, mockServiceProvider.Object);
                 }
                 catch (Exception ex)
                 {
@@ -50,7 +54,9 @@ namespace AmbientEffectsEngine.Tests.Views
             {
                 try
                 {
-                    var window = new MainWindow();
+                    var testViewModel = new MainViewModel();
+                    var mockServiceProvider = new Mock<IServiceProvider>();
+                    var window = new MainWindow(testViewModel, mockServiceProvider.Object);
                     viewModel = window.DataContext as MainViewModel;
                 }
                 catch (Exception ex)
@@ -83,7 +89,9 @@ namespace AmbientEffectsEngine.Tests.Views
             {
                 try
                 {
-                    var window = new MainWindow();
+                    var testViewModel = new MainViewModel();
+                    var mockServiceProvider = new Mock<IServiceProvider>();
+                    var window = new MainWindow(testViewModel, mockServiceProvider.Object);
                     viewModel = window.DataContext as MainViewModel;
                 }
                 catch (Exception ex)
@@ -104,7 +112,7 @@ namespace AmbientEffectsEngine.Tests.Views
             Assert.False(viewModel.IsEnabled);
             Assert.Equal(0.5f, viewModel.AudioSensitivity);
             Assert.NotNull(viewModel.SelectedEffect);
-            Assert.Equal("none", viewModel.SelectedEffect.Id);
+            Assert.Equal("softglow", viewModel.SelectedEffect.Id);
         }
 
         [Fact]
@@ -120,7 +128,7 @@ namespace AmbientEffectsEngine.Tests.Views
             Assert.False(viewModel.IsEnabled);
             Assert.Equal(0.5f, viewModel.AudioSensitivity);
             Assert.NotNull(viewModel.AvailableEffects);
-            Assert.Equal(4, viewModel.AvailableEffects.Count);
+            Assert.Equal(2, viewModel.AvailableEffects.Count);
         }
 
         [Fact]

@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("AmbientEffectsEngine.Tests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f9447d6f904df0b5ab1c8fe6fe8813f07439e3aa")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e254738a5011006059631b95e63c898d39587002")]
 [assembly: System.Reflection.AssemblyProductAttribute("AmbientEffectsEngine.Tests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("AmbientEffectsEngine.Tests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

@@ -1,0 +1,6 @@
+C:\Users\ktlax\Projects\ambeint_screen_capture_V2\obj\Debug\net8.0-windows\DebugMonitorMatching.csproj.AssemblyReference.cache
+C:\Users\ktlax\Projects\ambeint_screen_capture_V2\obj\Debug\net8.0-windows\DebugMonitorMatching.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\ktlax\Projects\ambeint_screen_capture_V2\obj\Debug\net8.0-windows\DebugMonitorMatching.AssemblyInfoInputs.cache
+C:\Users\ktlax\Projects\ambeint_screen_capture_V2\obj\Debug\net8.0-windows\DebugMonitorMatching.AssemblyInfo.cs
+C:\Users\ktlax\Projects\ambeint_screen_capture_V2\obj\Debug\net8.0-windows\DebugMonitorMatching.csproj.CoreCompileInputs.cache
+C:\Users\ktlax\Projects\ambeint_screen_capture_V2\obj\Debug\net8.0-windows\DebugMonitorMatching.sourcelink.json

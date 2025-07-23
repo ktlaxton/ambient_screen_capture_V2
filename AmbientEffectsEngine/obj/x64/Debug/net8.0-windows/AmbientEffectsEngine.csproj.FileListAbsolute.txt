@@ -55,3 +55,5 @@ C:\Users\ktlax\Projects\ambeint_screen_capture_V2\AmbientEffectsEngine\bin\x64\D
 C:\Users\ktlax\Projects\ambeint_screen_capture_V2\AmbientEffectsEngine\bin\x64\Debug\net8.0-windows\NAudio.Wasapi.dll
 C:\Users\ktlax\Projects\ambeint_screen_capture_V2\AmbientEffectsEngine\bin\x64\Debug\net8.0-windows\NAudio.WinForms.dll
 C:\Users\ktlax\Projects\ambeint_screen_capture_V2\AmbientEffectsEngine\bin\x64\Debug\net8.0-windows\NAudio.WinMM.dll
+C:\Users\ktlax\Projects\ambeint_screen_capture_V2\AmbientEffectsEngine\obj\x64\Debug\net8.0-windows\Views\MonitorSetupPage.baml
+C:\Users\ktlax\Projects\ambeint_screen_capture_V2\AmbientEffectsEngine\obj\x64\Debug\net8.0-windows\Views\MonitorSetupPage.g.cs

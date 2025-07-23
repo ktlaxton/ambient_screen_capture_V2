@@ -18,9 +18,9 @@ namespace AmbientEffectsEngine.Tests.ViewModels
             Assert.False(viewModel.IsEnabled);
             Assert.Equal(0.5f, viewModel.AudioSensitivity);
             Assert.NotNull(viewModel.SelectedEffect);
-            Assert.Equal("none", viewModel.SelectedEffect.Id);
+            Assert.Equal("softglow", viewModel.SelectedEffect.Id);
             Assert.NotNull(viewModel.AvailableEffects);
-            Assert.Equal(4, viewModel.AvailableEffects.Count);
+            Assert.Equal(2, viewModel.AvailableEffects.Count);
         }
 
         [Fact]
@@ -106,7 +106,7 @@ namespace AmbientEffectsEngine.Tests.ViewModels
         {
             // Arrange
             var viewModel = new MainViewModel();
-            var newEffect = viewModel.AvailableEffects.First(e => e.Id == "solid");
+            var newEffect = viewModel.AvailableEffects.First(e => e.Id == "generativevisualizer");
             var propertyChangedRaised = false;
             string? changedPropertyName = null;
 
@@ -123,7 +123,7 @@ namespace AmbientEffectsEngine.Tests.ViewModels
             Assert.True(propertyChangedRaised);
             Assert.Equal(nameof(MainViewModel.SelectedEffect), changedPropertyName);
             Assert.Equal(newEffect, viewModel.SelectedEffect);
-            Assert.Equal("solid", viewModel.SelectedEffect.Id);
+            Assert.Equal("generativevisualizer", viewModel.SelectedEffect.Id);
         }
 
         [Fact]
@@ -151,13 +151,11 @@ namespace AmbientEffectsEngine.Tests.ViewModels
 
             // Assert
             Assert.NotNull(viewModel.AvailableEffects);
-            Assert.Equal(4, viewModel.AvailableEffects.Count);
+            Assert.Equal(2, viewModel.AvailableEffects.Count);
             
             var effects = viewModel.AvailableEffects.ToList();
-            Assert.Contains(effects, e => e.Id == "none" && e.Name == "None");
-            Assert.Contains(effects, e => e.Id == "solid" && e.Name == "Solid Color");
-            Assert.Contains(effects, e => e.Id == "gradient" && e.Name == "Gradient");
-            Assert.Contains(effects, e => e.Id == "pulse" && e.Name == "Pulse");
+            Assert.Contains(effects, e => e.Id == "softglow" && e.Name == "Soft Glow");
+            Assert.Contains(effects, e => e.Id == "generativevisualizer" && e.Name == "Generative Visualizer");
         }
 
         [Fact]
@@ -180,7 +178,7 @@ namespace AmbientEffectsEngine.Tests.ViewModels
         {
             // Arrange
             var viewModel = new MainViewModel();
-            var testEffect = viewModel.AvailableEffects.First(e => e.Id == "gradient");
+            var testEffect = viewModel.AvailableEffects.First(e => e.Id == "generativevisualizer");
 
             // Act
             viewModel.IsEnabled = true;
