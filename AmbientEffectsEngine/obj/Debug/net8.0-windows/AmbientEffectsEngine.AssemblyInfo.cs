@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("AmbientEffectsEngine")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e254738a5011006059631b95e63c898d39587002")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+eeb353916cfea1d168e048f7a26a74058315aec6")]
 [assembly: System.Reflection.AssemblyProductAttribute("AmbientEffectsEngine")]
 [assembly: System.Reflection.AssemblyTitleAttribute("AmbientEffectsEngine")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
