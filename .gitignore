@@ -1,0 +1,15 @@
+# Build outputs
+bin/
+obj/
+TestResults/
+*.user
+.vs/
+
+# Web
+node_modules/
+web/dist/
+src/Engine/wwwroot/
+
+# Scratch / generated
+docs/_build/
+*.log

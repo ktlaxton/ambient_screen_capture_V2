@@ -1,0 +1,76 @@
+/* Custom title bar — the whole strip is a drag region (WebView2 non-client
+   region support); interactive children opt out with app-region: no-drag. */
+
+.titlebar {
+  position: relative;
+  z-index: 50;
+  flex: none;
+  height: var(--titlebar-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 14px;
+  background: rgba(10, 12, 18, 0.85);
+  border-bottom: 1px solid var(--panel-border);
+  app-region: drag;
+  -webkit-app-region: drag;
+}
+
+.titlebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  pointer-events: none;
+}
+
+.titlebar-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--accent-grad);
+  box-shadow: 0 0 10px var(--accent-a-soft);
+}
+
+.titlebar-wordmark {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+.titlebar-buttons {
+  display: flex;
+  height: 100%;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-btn {
+  width: 46px;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+  transition:
+    background var(--t-fast),
+    color var(--t-fast);
+}
+
+.titlebar-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.titlebar-btn.close:hover {
+  background: #e81123;
+  color: #ffffff;
+}

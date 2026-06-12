@@ -1,0 +1,156 @@
+/* MonitorMap — spatial virtual-desktop map with live source edge glow. */
+
+.monmap {
+  position: relative;
+  height: 250px;
+  border-radius: var(--radius-sm);
+  overflow: visible;
+}
+
+.monmap.compact {
+  height: 200px;
+}
+
+.monmap-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.mon {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  border: 1px solid var(--panel-border-strong);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+    #11141d;
+  cursor: pointer;
+  overflow: visible;
+  transition:
+    border-color var(--t-fast),
+    box-shadow var(--t-fast),
+    background var(--t-fast);
+}
+
+.mon:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.mon:focus-visible {
+  outline: 2px solid var(--accent-a);
+  outline-offset: 2px;
+}
+
+/* Source: cyan ring */
+.mon.src {
+  cursor: default;
+  border-color: var(--accent-a);
+  box-shadow:
+    0 0 14px rgba(34, 211, 238, 0.3),
+    inset 0 0 22px rgba(34, 211, 238, 0.08);
+}
+
+/* Target: violet ring */
+.mon.tgt {
+  border-color: var(--accent-b);
+  box-shadow:
+    0 0 14px rgba(139, 92, 246, 0.35),
+    inset 0 0 22px rgba(139, 92, 246, 0.1);
+}
+
+.mon-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px 0;
+  min-width: 0;
+}
+
+.mon-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mon-star {
+  flex: none;
+  color: var(--warn);
+  filter: drop-shadow(0 0 3px rgba(245, 185, 78, 0.6));
+}
+
+.mon-tag {
+  position: absolute;
+  left: 8px;
+  bottom: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.mon-tag.src-tag {
+  color: #04161a;
+  background: var(--accent-a);
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
+}
+
+.mon-tag.tgt-tag {
+  color: #ffffff;
+  background: var(--accent-b);
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.5);
+}
+
+.mon-make-src {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.92);
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 211, 238, 0.6);
+  background: rgba(8, 12, 18, 0.85);
+  color: var(--accent-a);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--t-fast),
+    transform var(--t-fast),
+    box-shadow var(--t-fast);
+}
+
+.mon:hover .mon-make-src,
+.mon:focus-visible .mon-make-src {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.mon-make-src:hover {
+  box-shadow: 0 0 12px var(--accent-a-soft);
+}
+
+.mon-effect {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  max-width: calc(100% - 12px);
+}

@@ -1,0 +1,43 @@
+/* SignalPanel — live edge-ring + FFT visual. */
+
+.signal-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.signal-canvas {
+  display: block;
+  width: 100%;
+  height: 196px;
+}
+
+.signal-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 2px 0;
+}
+
+.dom-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 5px;
+  background: #222;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  transition: background 200ms linear;
+  flex: none;
+}
+
+.dom-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.dom-hex {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}

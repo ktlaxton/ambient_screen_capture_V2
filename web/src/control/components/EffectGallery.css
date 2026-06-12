@@ -1,0 +1,119 @@
+/* EffectGallery — live-preview cards. */
+
+.fx-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: 14px;
+}
+
+.fx-gallery.compact {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.fx-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition:
+    border-color var(--t-fast),
+    box-shadow var(--t-fast),
+    transform var(--t-fast);
+}
+
+.fx-card:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  transform: translateY(-2px);
+}
+
+.fx-card.active {
+  border-color: var(--accent-a);
+  box-shadow:
+    0 0 0 1px var(--accent-a),
+    0 0 18px rgba(34, 211, 238, 0.25),
+    0 0 36px rgba(139, 92, 246, 0.15);
+}
+
+.fx-preview {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #07090f;
+}
+
+.fx-preview canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.fx-fallback {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 30% 70%, rgba(34, 211, 238, 0.25), transparent 60%),
+    radial-gradient(ellipse at 75% 25%, rgba(139, 92, 246, 0.3), transparent 60%),
+    #0b0e16;
+}
+
+.fx-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-grad);
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  box-shadow: 0 0 12px var(--accent-a-soft);
+}
+
+.fx-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px 12px;
+}
+
+.fx-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.fx-card.active .fx-name {
+  background: var(--accent-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.fx-desc {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.fx-gallery.compact .fx-meta {
+  padding: 8px 10px 9px;
+}
+
+.fx-gallery.compact .fx-name {
+  font-size: 12px;
+}

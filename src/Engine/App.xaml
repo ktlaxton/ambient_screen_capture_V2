@@ -1,0 +1,9 @@
+<Application x:Class="AmbientFx.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ShutdownMode="OnExplicitShutdown">
+    <!-- Tray-first lifetime: no StartupUri; windows are created/owned by WebViewWindowManager.
+         The process exits only via an explicit Application.Shutdown() (tray Exit menu). -->
+    <Application.Resources>
+    </Application.Resources>
+</Application>

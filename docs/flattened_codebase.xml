@@ -1,0 +1,3023 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<files>
+  <file path="App.xaml.cs"><![CDATA[
+    using AmbientEffectsEngine.Services;
+    using AmbientEffectsEngine.Services.Capture;
+    using AmbientEffectsEngine.Services.Processing;
+    using AmbientEffectsEngine.Services.Rendering;
+    using AmbientEffectsEngine.ViewModels;
+    using AmbientEffectsEngine.Views;
+    using Microsoft.Extensions.DependencyInjection;
+    using System.Windows;
+    using WpfApplication = System.Windows.Application;
+    
+    namespace AmbientEffectsEngine;
+    
+    public partial class App : WpfApplication
+    {
+        private SystemTrayService? _systemTrayService;
+        private ServiceProvider? _serviceProvider;
+    
+        protected override void OnStartup(StartupEventArgs e)
+        {
+            base.OnStartup(e);
+            
+            // Configure services
+            var services = new ServiceCollection();
+            ConfigureServices(services);
+            _serviceProvider = services.BuildServiceProvider();
+            
+            // Initialize system tray
+            _systemTrayService = new SystemTrayService();
+            _systemTrayService.Initialize();
+            
+            // Start screen capture service
+            var screenCaptureService = _serviceProvider.GetRequiredService<IScreenCaptureService>();
+            screenCaptureService.Start();
+            
+            // Start audio capture service
+            var audioCaptureService = _serviceProvider.GetRequiredService<IAudioCaptureService>();
+            audioCaptureService.Start();
+            
+            // Start data processing service
+            var dataProcessingService = _serviceProvider.GetRequiredService<IDataProcessingService>();
+            dataProcessingService.Start();
+            
+            // Create and show main window
+            var mainWindow = _serviceProvider.GetRequiredService<MainWindow>();
+            mainWindow.Show();
+        }
+    
+        private void ConfigureServices(ServiceCollection services)
+        {
+            // Register services
+            services.AddSingleton<IScreenCaptureService, ScreenCaptureService>();
+            services.AddSingleton<IAudioCaptureService, AudioCaptureService>();
+            services.AddSingleton<IDataProcessingService, DataProcessingService>();
+            services.AddSingleton<IEffectFactory, EffectFactory>();
+            services.AddSingleton<IEffectsRenderingService, EffectsRenderingService>();
+            services.AddSingleton<ISettingsService, SettingsService>();
+            services.AddSingleton<IMonitorDetectionService, MonitorDetectionService>();
+            
+            // Register ViewModels
+            services.AddTransient<MainViewModel>();
+            services.AddTransient<MonitorSetupViewModel>();
+            
+            // Register Views
+            services.AddTransient<MainWindow>(provider => new MainWindow(
+                provider.GetRequiredService<MainViewModel>(),
+                provider));
+            services.AddTransient<MonitorSetupPage>();
+        }
+    
+        protected override void OnExit(ExitEventArgs e)
+        {
+            // Stop screen capture
+            var screenCaptureService = _serviceProvider?.GetService<IScreenCaptureService>();
+            screenCaptureService?.Stop();
+            
+            // Stop audio capture
+            var audioCaptureService = _serviceProvider?.GetService<IAudioCaptureService>();
+            audioCaptureService?.Stop();
+            
+            // Stop data processing service
+            var dataProcessingService = _serviceProvider?.GetService<IDataProcessingService>();
+            dataProcessingService?.Stop();
+            
+            // Stop effects rendering service
+            var effectsRenderingService = _serviceProvider?.GetService<IEffectsRenderingService>();
+            effectsRenderingService?.Stop();
+            
+            // Stop monitor detection service
+            var monitorDetectionService = _serviceProvider?.GetService<IMonitorDetectionService>();
+            if (monitorDetectionService is IDisposable disposableService)
+            {
+                disposableService.Dispose();
+            }
+            
+            _systemTrayService?.Shutdown();
+            _serviceProvider?.Dispose();
+            base.OnExit(e);
+        }
+    }
+    ]]></file>
+  <file path="App.xaml"><![CDATA[
+    <Application x:Class="AmbientEffectsEngine.App"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        <Application.Resources>
+             
+        </Application.Resources>
+    </Application>
+    ]]></file>
+  <file path="AmbientEffectsEngine.csproj"><![CDATA[
+    <Project Sdk="Microsoft.NET.Sdk">
+      <PropertyGroup>
+        <OutputType>WinExe</OutputType>
+        <TargetFramework>net8.0-windows</TargetFramework>
+        <UseWPF>true</UseWPF>
+        <UseWindowsForms>true</UseWindowsForms>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <LangVersion>12.0</LangVersion>
+      </PropertyGroup>
+    
+      <ItemGroup>
+        <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+          <_Parameter1>AmbientEffectsEngine.Tests</_Parameter1>
+        </AssemblyAttribute>
+      </ItemGroup>
+    
+      <ItemGroup>
+        <Content Include="Assets\**" />
+      </ItemGroup>
+    
+      <ItemGroup>
+        <PackageReference Include="NAudio" Version="2.2.1" />
+        <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+        <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
+      </ItemGroup>
+    
+    </Project>
+    ]]></file>
+  <file path="Views\MonitorSetupPage.xaml.cs"><![CDATA[
+    using System.Windows.Controls;
+    using AmbientEffectsEngine.ViewModels;
+    
+    namespace AmbientEffectsEngine.Views
+    {
+        public partial class MonitorSetupPage : Page
+        {
+            public MonitorSetupPage()
+            {
+                InitializeComponent();
+            }
+    
+            public MonitorSetupPage(MonitorSetupViewModel viewModel) : this()
+            {
+                DataContext = viewModel;
+            }
+        }
+    }
+    ]]></file>
+  <file path="Views\MonitorSetupPage.xaml"><![CDATA[
+    <Page x:Class="AmbientEffectsEngine.Views.MonitorSetupPage"
+          xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+          xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+          Title="Monitor Setup">
+        <Page.Resources>
+            <!-- Converters -->
+            <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+            
+            <!-- Inverse Boolean to Visibility Converter -->
+            <Style x:Key="InverseVisibilityStyle" TargetType="FrameworkElement">
+                <Setter Property="Visibility" Value="Collapsed"/>
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsLoading}" Value="False">
+                        <Setter Property="Visibility" Value="Visible"/>
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+            <!-- Style for Monitor Display Boxes -->
+            <Style x:Key="MonitorDisplayStyle" TargetType="Border">
+                <Setter Property="Width" Value="120"/>
+                <Setter Property="Height" Value="80"/>
+                <Setter Property="BorderThickness" Value="2"/>
+                <Setter Property="CornerRadius" Value="5"/>
+                <Setter Property="Margin" Value="10"/>
+                <Setter Property="Background" Value="#F0F0F0"/>
+                <Setter Property="BorderBrush" Value="#CCCCCC"/>
+            </Style>
+            
+            <!-- Style for Selected Monitor -->
+            <Style x:Key="SelectedMonitorStyle" TargetType="Border" BasedOn="{StaticResource MonitorDisplayStyle}">
+                <Setter Property="Background" Value="#E3F2FD"/>
+                <Setter Property="BorderBrush" Value="#2196F3"/>
+            </Style>
+            
+            <!-- Style for Primary Monitor -->
+            <Style x:Key="PrimaryMonitorStyle" TargetType="Border" BasedOn="{StaticResource MonitorDisplayStyle}">
+                <Setter Property="Background" Value="#FFF3E0"/>
+                <Setter Property="BorderBrush" Value="#FF9800"/>
+            </Style>
+            
+            <!-- Style for Disabled Monitor -->
+            <Style x:Key="DisabledMonitorStyle" TargetType="Border" BasedOn="{StaticResource MonitorDisplayStyle}">
+                <Setter Property="Background" Value="#FAFAFA"/>
+                <Setter Property="BorderBrush" Value="#E0E0E0"/>
+                <Setter Property="Opacity" Value="0.7"/>
+            </Style>
+        </Page.Resources>
+        
+        <Grid Margin="20">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            
+            <!-- Header -->
+            <TextBlock Grid.Row="0" 
+                       Text="Monitor Setup" 
+                       FontSize="28" 
+                       FontWeight="Bold"
+                       HorizontalAlignment="Center" 
+                       Margin="0,0,0,20" />
+            
+            <!-- Instructions -->
+            <TextBlock Grid.Row="1"
+                       TextWrapping="Wrap"
+                       HorizontalAlignment="Center"
+                       MaxWidth="600"
+                       Margin="0,0,0,30">
+                <TextBlock.Text>
+                    Select which secondary monitors should display ambient effects. Your primary monitor (marked in orange) cannot be selected and will only be used as the source for screen capture.
+                </TextBlock.Text>
+            </TextBlock>
+            
+            <!-- Loading Indicator -->
+            <StackPanel Grid.Row="2" 
+                       HorizontalAlignment="Center" 
+                       VerticalAlignment="Center"
+                       Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <ProgressBar IsIndeterminate="True" Width="200" Height="20" Margin="0,0,0,10"/>
+                <TextBlock Text="Loading monitors..." HorizontalAlignment="Center"/>
+            </StackPanel>
+            
+            <!-- Monitor Display Area -->
+            <ScrollViewer Grid.Row="2" 
+                         HorizontalScrollBarVisibility="Auto" 
+                         VerticalScrollBarVisibility="Auto"
+                         Style="{StaticResource InverseVisibilityStyle}">
+                <ItemsControl ItemsSource="{Binding Monitors}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border>
+                                <Border.Style>
+                                    <Style TargetType="Border" BasedOn="{StaticResource MonitorDisplayStyle}">
+                                        <Style.Triggers>
+                                            <!-- Primary Monitor Style -->
+                                            <DataTrigger Binding="{Binding Monitor.IsPrimary}" Value="True">
+                                                <Setter Property="Background" Value="#FFF3E0"/>
+                                                <Setter Property="BorderBrush" Value="#FF9800"/>
+                                            </DataTrigger>
+                                            <!-- Selected Monitor Style -->
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding IsSelected}" Value="True"/>
+                                                    <Condition Binding="{Binding Monitor.IsPrimary}" Value="False"/>
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter Property="Background" Value="#E3F2FD"/>
+                                                <Setter Property="BorderBrush" Value="#2196F3"/>
+                                            </MultiDataTrigger>
+                                            <!-- Disabled Primary Monitor -->
+                                            <DataTrigger Binding="{Binding CanSelect}" Value="False">
+                                                <Setter Property="Opacity" Value="0.7"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    
+                                    <!-- Monitor Icon -->
+                                    <Viewbox Grid.Row="0" Width="40" Height="30" Margin="0,5,0,0">
+                                        <Canvas Width="24" Height="18">
+                                            <!-- Monitor Screen -->
+                                            <Rectangle Width="20" Height="14" Canvas.Left="2" Canvas.Top="0" 
+                                                     Fill="#333333" Stroke="#666666" StrokeThickness="0.5"/>
+                                            <!-- Monitor Stand -->
+                                            <Rectangle Width="8" Height="2" Canvas.Left="8" Canvas.Top="14.5" 
+                                                     Fill="#666666"/>
+                                            <!-- Monitor Base -->
+                                            <Rectangle Width="12" Height="1.5" Canvas.Left="6" Canvas.Top="16.5" 
+                                                     Fill="#666666"/>
+                                        </Canvas>
+                                    </Viewbox>
+                                    
+                                    <!-- Monitor Name -->
+                                    <TextBlock Grid.Row="1" 
+                                              Text="{Binding DisplayName}" 
+                                              FontSize="12" 
+                                              FontWeight="SemiBold"
+                                              HorizontalAlignment="Center" 
+                                              Margin="5,2,5,2"
+                                              TextWrapping="Wrap"
+                                              TextAlignment="Center"/>
+                                    
+                                    <!-- Selection Checkbox -->
+                                    <CheckBox Grid.Row="2" 
+                                             IsChecked="{Binding IsSelected, Mode=TwoWay}" 
+                                             IsEnabled="{Binding CanSelect}"
+                                             HorizontalAlignment="Center"
+                                             Margin="0,2,0,5">
+                                        <CheckBox.Content>
+                                            <TextBlock FontSize="10">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Text" Value="Select"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Monitor.IsPrimary}" Value="True">
+                                                                <Setter Property="Text" Value="Primary"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                <Setter Property="Text" Value="Selected"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </CheckBox.Content>
+                                    </CheckBox>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+            
+            <!-- Footer Information -->
+            <StackPanel Grid.Row="3" 
+                       HorizontalAlignment="Center" 
+                       Margin="0,20,0,0"
+                       Style="{StaticResource InverseVisibilityStyle}">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,5">
+                    <Border Width="15" Height="10" Background="#FFF3E0" BorderBrush="#FF9800" BorderThickness="1" Margin="0,0,5,0"/>
+                    <TextBlock Text="Primary Monitor (Source)" FontSize="12" Margin="0,0,20,0"/>
+                    <Border Width="15" Height="10" Background="#E3F2FD" BorderBrush="#2196F3" BorderThickness="1" Margin="0,0,5,0"/>
+                    <TextBlock Text="Selected for Effects" FontSize="12"/>
+                </StackPanel>
+                <TextBlock Text="Changes are saved automatically" 
+                          FontSize="11" 
+                          FontStyle="Italic" 
+                          Foreground="#666666"
+                          HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Grid>
+    </Page>
+    ]]></file>
+  <file path="Views\MainWindow.xaml.cs"><![CDATA[
+    using System;
+    using System.Windows;
+    using System.Windows.Navigation;
+    using AmbientEffectsEngine.ViewModels;
+    using Microsoft.Extensions.DependencyInjection;
+    
+    namespace AmbientEffectsEngine.Views;
+    
+    public partial class MainWindow : Window
+    {
+        private MainViewModel? _viewModel;
+        private readonly IServiceProvider _serviceProvider;
+    
+        public MainWindow(MainViewModel viewModel, IServiceProvider serviceProvider)
+        {
+            InitializeComponent();
+            _viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
+            _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+            DataContext = _viewModel;
+        }
+    
+        private void MonitorSetupButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var monitorSetupViewModel = _serviceProvider.GetRequiredService<MonitorSetupViewModel>();
+                var monitorSetupPage = new MonitorSetupPage(monitorSetupViewModel);
+                
+                var monitorSetupWindow = new Window
+                {
+                    Title = "Monitor Setup",
+                    Content = monitorSetupPage,
+                    Width = 800,
+                    Height = 600,
+                    MinWidth = 600,
+                    MinHeight = 400,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                    Owner = this
+                };
+                
+                monitorSetupWindow.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"Error opening Monitor Setup: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+    
+        protected override void OnClosed(EventArgs e)
+        {
+            _viewModel = null;
+            base.OnClosed(e);
+        }
+    }
+    ]]></file>
+  <file path="Views\MainWindow.xaml"><![CDATA[
+    <Window x:Class="AmbientEffectsEngine.Views.MainWindow"
+            xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+            Title="Ambient Effects Engine" Height="450" Width="800"
+            MinWidth="600" MinHeight="300">
+        <Grid Margin="20">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            
+            <!-- Header -->
+            <TextBlock Grid.Row="0" 
+                       Text="Ambient Effects Engine" 
+                       FontSize="28" 
+                       FontWeight="Bold"
+                       HorizontalAlignment="Center" 
+                       Margin="0,0,0,30" />
+            
+            <!-- Settings Panel -->
+            <StackPanel Grid.Row="1" MaxWidth="400" HorizontalAlignment="Center">
+                
+                <!-- Master On/Off Toggle -->
+                <Border Background="#F5F5F5" 
+                        BorderBrush="#DDDDDD" 
+                        BorderThickness="1" 
+                        CornerRadius="5" 
+                        Padding="15" 
+                        Margin="0,0,0,20">
+                    <StackPanel>
+                        <TextBlock Text="Master Control" 
+                                   FontSize="16" 
+                                   FontWeight="SemiBold" 
+                                   Margin="0,0,0,10"/>
+                        <CheckBox Name="EnabledCheckBox"
+                                  Content="Enable Ambient Effects" 
+                                  FontSize="14"
+                                  IsChecked="{Binding IsEnabled, Mode=TwoWay}" />
+                    </StackPanel>
+                </Border>
+                
+                <!-- Effect Style Selection -->
+                <Border Background="#F5F5F5" 
+                        BorderBrush="#DDDDDD" 
+                        BorderThickness="1" 
+                        CornerRadius="5" 
+                        Padding="15" 
+                        Margin="0,0,0,20">
+                    <StackPanel>
+                        <TextBlock Text="Effect Style" 
+                                   FontSize="16" 
+                                   FontWeight="SemiBold" 
+                                   Margin="0,0,0,10"/>
+                        <ComboBox Name="EffectStyleComboBox"
+                                  ItemsSource="{Binding AvailableEffects}"
+                                  SelectedItem="{Binding SelectedEffect, Mode=TwoWay}"
+                                  DisplayMemberPath="Name"
+                                  FontSize="14"
+                                  Height="30" />
+                        <TextBlock Text="{Binding SelectedEffect.Description}" 
+                                   FontSize="12" 
+                                   FontStyle="Italic" 
+                                   Foreground="#666666"
+                                   Margin="0,5,0,0"/>
+                    </StackPanel>
+                </Border>
+                
+                <!-- Audio Sensitivity -->
+                <Border Background="#F5F5F5" 
+                        BorderBrush="#DDDDDD" 
+                        BorderThickness="1" 
+                        CornerRadius="5" 
+                        Padding="15">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="Audio Sensitivity" 
+                                       FontSize="16" 
+                                       FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding AudioSensitivity, StringFormat='{}{0:P0}'}" 
+                                       FontSize="14" 
+                                       Foreground="#666666"
+                                       Margin="10,0,0,0"/>
+                        </StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Low" FontSize="12" Foreground="#666666" Margin="0,0,10,0"/>
+                            <Slider Name="AudioSensitivitySlider"
+                                    Grid.Column="1"
+                                    Minimum="0" 
+                                    Maximum="1" 
+                                    Value="{Binding AudioSensitivity, Mode=TwoWay}"
+                                    TickFrequency="0.1" 
+                                    IsSnapToTickEnabled="True"/>
+                            <TextBlock Grid.Column="2" Text="High" FontSize="12" Foreground="#666666" Margin="10,0,0,0"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+                
+                <!-- Monitor Setup Button -->
+                <Border Background="#F5F5F5" 
+                        BorderBrush="#DDDDDD" 
+                        BorderThickness="1" 
+                        CornerRadius="5" 
+                        Padding="15" 
+                        Margin="0,0,0,20">
+                    <StackPanel>
+                        <TextBlock Text="Monitor Configuration" 
+                                   FontSize="16" 
+                                   FontWeight="SemiBold" 
+                                   Margin="0,0,0,10"/>
+                        <Button Name="MonitorSetupButton"
+                                Content="Configure Monitors" 
+                                FontSize="14"
+                                Height="35"
+                                Click="MonitorSetupButton_Click"
+                                Background="#2196F3"
+                                Foreground="White"
+                                BorderThickness="0"
+                                Cursor="Hand">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}" 
+                                                        CornerRadius="3" 
+                                                        BorderThickness="{TemplateBinding BorderThickness}">
+                                                    <ContentPresenter HorizontalAlignment="Center" 
+                                                                    VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background" Value="#1976D2"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsPressed" Value="True">
+                                                        <Setter Property="Background" Value="#1565C0"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <TextBlock Text="Select which monitors display ambient effects" 
+                                   FontSize="12" 
+                                   FontStyle="Italic" 
+                                   Foreground="#666666"
+                                   Margin="0,5,0,0"
+                                   HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+                
+            </StackPanel>
+        </Grid>
+    </Window>
+    ]]></file>
+  <file path="ViewModels\MonitorSetupViewModel.cs"><![CDATA[
+    using System;
+    using System.Collections.Generic;
+    using System.Collections.ObjectModel;
+    using System.ComponentModel;
+    using System.Linq;
+    using System.Runtime.CompilerServices;
+    using System.Threading.Tasks;
+    using AmbientEffectsEngine.Models;
+    using AmbientEffectsEngine.Services;
+    using AmbientEffectsEngine.Services.Rendering;
+    
+    namespace AmbientEffectsEngine.ViewModels
+    {
+        public class MonitorSetupViewModel : INotifyPropertyChanged
+        {
+            private readonly IMonitorDetectionService _monitorDetectionService;
+            private readonly ISettingsService _settingsService;
+            private readonly IEffectsRenderingService _effectsRenderingService;
+            private bool _isLoading;
+    
+            public event PropertyChangedEventHandler? PropertyChanged;
+    
+            public ObservableCollection<MonitorSelectionViewModel> Monitors { get; }
+    
+            public bool IsLoading
+            {
+                get => _isLoading;
+                set
+                {
+                    if (_isLoading != value)
+                    {
+                        _isLoading = value;
+                        OnPropertyChanged();
+                    }
+                }
+            }
+    
+            public MonitorSetupViewModel(IMonitorDetectionService monitorDetectionService, ISettingsService settingsService, IEffectsRenderingService effectsRenderingService)
+            {
+                _monitorDetectionService = monitorDetectionService ?? throw new ArgumentNullException(nameof(monitorDetectionService));
+                _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
+                _effectsRenderingService = effectsRenderingService ?? throw new ArgumentNullException(nameof(effectsRenderingService));
+                
+                Monitors = new ObservableCollection<MonitorSelectionViewModel>();
+                
+                // Subscribe to monitor configuration changes
+                _monitorDetectionService.MonitorConfigurationChanged += OnMonitorConfigurationChanged;
+                
+                // Start monitoring for changes
+                _monitorDetectionService.StartMonitoring();
+                
+                // Load monitors and settings
+                _ = LoadMonitorsAsync();
+            }
+    
+            public async Task LoadMonitorsAsync()
+            {
+                IsLoading = true;
+                
+                try
+                {
+                    // Get connected monitors
+                    var connectedMonitors = await _monitorDetectionService.GetConnectedMonitorsAsync();
+                    
+                    // Load saved settings to get selected monitor IDs
+                    var settings = await _settingsService.LoadAsync();
+                    var selectedMonitorIds = settings.TargetMonitorIds ?? new List<string>();
+                    
+                    // Clear existing monitors
+                    Monitors.Clear();
+                    
+                    // Create monitor selection view models
+                    foreach (var monitor in connectedMonitors)
+                    {
+                        var monitorVM = new MonitorSelectionViewModel(monitor)
+                        {
+                            IsSelected = selectedMonitorIds.Contains(monitor.Id) && !monitor.IsPrimary
+                        };
+                        
+                        // Subscribe to selection changes
+                        monitorVM.PropertyChanged += OnMonitorSelectionChanged;
+                        
+                        Monitors.Add(monitorVM);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error loading monitors: {ex.Message}");
+                }
+                finally
+                {
+                    IsLoading = false;
+                }
+            }
+    
+            private async void OnMonitorSelectionChanged(object? sender, PropertyChangedEventArgs e)
+            {
+                if (e.PropertyName == nameof(MonitorSelectionViewModel.IsSelected))
+                {
+                    await SaveSelectionAsync();
+                }
+            }
+    
+            private async Task SaveSelectionAsync()
+            {
+                try
+                {
+                    var settings = await _settingsService.LoadAsync();
+                    
+                    // Get selected monitor IDs (excluding primary monitors)
+                    var selectedMonitorIds = Monitors
+                        .Where(m => m.IsSelected && !m.Monitor.IsPrimary)
+                        .Select(m => m.Monitor.Id)
+                        .ToList();
+                    
+                    settings.TargetMonitorIds = selectedMonitorIds;
+                    
+                    await _settingsService.SaveAsync(settings);
+                    
+                    // Apply monitor selections to effects rendering service immediately
+                    _effectsRenderingService.SetTargetMonitors(selectedMonitorIds);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error saving monitor selection: {ex.Message}");
+                }
+            }
+    
+            private async void OnMonitorConfigurationChanged(object? sender, MonitorConfigurationChangedEventArgs e)
+            {
+                // Reload monitors when configuration changes
+                await LoadMonitorsAsync();
+            }
+    
+            protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+            }
+        }
+    
+        public class MonitorSelectionViewModel : INotifyPropertyChanged
+        {
+            private bool _isSelected;
+    
+            public event PropertyChangedEventHandler? PropertyChanged;
+    
+            public DisplayMonitor Monitor { get; }
+    
+            public bool IsSelected
+            {
+                get => _isSelected;
+                set
+                {
+                    if (_isSelected != value && !Monitor.IsPrimary)
+                    {
+                        _isSelected = value;
+                        OnPropertyChanged();
+                    }
+                }
+            }
+    
+            public bool CanSelect => !Monitor.IsPrimary;
+    
+            public string DisplayName => Monitor.IsPrimary ? $"{Monitor.Name} (Primary)" : Monitor.Name;
+    
+            public MonitorSelectionViewModel(DisplayMonitor monitor)
+            {
+                Monitor = monitor ?? throw new ArgumentNullException(nameof(monitor));
+            }
+    
+            protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+            }
+        }
+    }
+    ]]></file>
+  <file path="ViewModels\MainViewModel.cs"><![CDATA[
+    using System;
+    using System.Collections.ObjectModel;
+    using System.ComponentModel;
+    using System.Linq;
+    using System.Runtime.CompilerServices;
+    using AmbientEffectsEngine.Models;
+    using AmbientEffectsEngine.Services;
+    using AmbientEffectsEngine.Services.Processing;
+    using AmbientEffectsEngine.Services.Rendering;
+    
+    namespace AmbientEffectsEngine.ViewModels
+    {
+        public class MainViewModel : INotifyPropertyChanged
+        {
+            private readonly IEffectsRenderingService? _effectsRenderingService;
+            private readonly IEffectFactory? _effectFactory;
+            private readonly ISettingsService? _settingsService;
+            private readonly IDataProcessingService? _dataProcessingService;
+            private bool _isEnabled;
+            private EffectStyle _selectedEffect = new EffectStyle();
+            private float _audioSensitivity;
+    
+            public event PropertyChangedEventHandler? PropertyChanged;
+    
+            public bool IsEnabled
+            {
+                get => _isEnabled;
+                set
+                {
+                    if (_isEnabled != value)
+                    {
+                        _isEnabled = value;
+                        OnPropertyChanged();
+                        UpdateEffectsRenderingState();
+                        SaveSettingsAsync();
+                    }
+                }
+            }
+    
+            public EffectStyle SelectedEffect
+            {
+                get => _selectedEffect;
+                set
+                {
+                    if (_selectedEffect != value)
+                    {
+                        _selectedEffect = value;
+                        OnPropertyChanged();
+                        OnEffectSelectionChanged();
+                    }
+                }
+            }
+    
+            public float AudioSensitivity
+            {
+                get => _audioSensitivity;
+                set
+                {
+                    if (Math.Abs(_audioSensitivity - value) > 0.001f)
+                    {
+                        _audioSensitivity = Math.Clamp(value, 0.0f, 1.0f);
+                        OnPropertyChanged();
+                        OnAudioSensitivityChanged();
+                    }
+                }
+            }
+    
+            public ObservableCollection<EffectStyle> AvailableEffects { get; }
+    
+            public MainViewModel(IEffectsRenderingService? effectsRenderingService = null, 
+                                IEffectFactory? effectFactory = null, 
+                                ISettingsService? settingsService = null, 
+                                IDataProcessingService? dataProcessingService = null)
+            {
+                _effectsRenderingService = effectsRenderingService;
+                _effectFactory = effectFactory;
+                _settingsService = settingsService;
+                _dataProcessingService = dataProcessingService;
+                
+                // Initialize available effects from factory
+                AvailableEffects = new ObservableCollection<EffectStyle>();
+                LoadAvailableEffects();
+                
+                // Load settings or use defaults
+                LoadSettingsAsync();
+            }
+    
+            private void LoadAvailableEffects()
+            {
+                AvailableEffects.Clear();
+                
+                if (_effectFactory != null)
+                {
+                    // Get available effects from the factory and create effect instances to get their metadata
+                    foreach (var effectId in _effectFactory.GetAvailableEffectIds())
+                    {
+                        try
+                        {
+                            using var effect = _effectFactory.CreateEffect(effectId);
+                            AvailableEffects.Add(new EffectStyle
+                            {
+                                Id = effect.EffectId,
+                                Name = effect.Name,
+                                Description = effect.Description
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Failed to load effect '{effectId}': {ex.Message}");
+                        }
+                    }
+                }
+                
+                // Fallback to hardcoded effects if factory is not available
+                if (AvailableEffects.Count == 0)
+                {
+                    AvailableEffects.Add(new EffectStyle { Id = "softglow", Name = "Soft Glow", Description = "Ambient glow effect" });
+                    AvailableEffects.Add(new EffectStyle { Id = "generativevisualizer", Name = "Generative Visualizer", Description = "Dynamic particle-based visualization" });
+                }
+            }
+    
+            private async void LoadSettingsAsync()
+            {
+                if (_settingsService == null)
+                {
+                    // Use defaults if no settings service
+                    _isEnabled = false;
+                    _audioSensitivity = 0.5f;
+                    _selectedEffect = AvailableEffects.FirstOrDefault(e => e.Id == "softglow") ?? AvailableEffects.FirstOrDefault() ?? new EffectStyle();
+                    return;
+                }
+    
+                try
+                {
+                    var settings = await _settingsService.LoadAsync();
+                    
+                    _isEnabled = settings.IsEnabled;
+                    _audioSensitivity = Math.Clamp(settings.AudioSensitivity, 0.0f, 1.0f);
+                    _selectedEffect = AvailableEffects.FirstOrDefault(e => e.Id == settings.SelectedEffectId) 
+                                    ?? AvailableEffects.FirstOrDefault() ?? new EffectStyle();
+                    
+                    // Update data processing service with loaded sensitivity
+                    if (_dataProcessingService != null)
+                    {
+                        _dataProcessingService.AudioSensitivity = _audioSensitivity;
+                    }
+                    
+                    // Apply monitor selections to effects rendering service
+                    if (_effectsRenderingService != null && settings.TargetMonitorIds != null)
+                    {
+                        _effectsRenderingService.SetTargetMonitors(settings.TargetMonitorIds);
+                    }
+                    
+                    // Notify UI of loaded values
+                    OnPropertyChanged(nameof(IsEnabled));
+                    OnPropertyChanged(nameof(AudioSensitivity));
+                    OnPropertyChanged(nameof(SelectedEffect));
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error loading settings: {ex.Message}");
+                    
+                    // Fallback to defaults
+                    _isEnabled = false;
+                    _audioSensitivity = 0.5f;
+                    _selectedEffect = AvailableEffects.FirstOrDefault(e => e.Id == "softglow") ?? AvailableEffects.FirstOrDefault() ?? new EffectStyle();
+                }
+            }
+    
+            private async void SaveSettingsAsync()
+            {
+                if (_settingsService == null) return;
+    
+                try
+                {
+                    var settings = new ApplicationSettings
+                    {
+                        IsEnabled = _isEnabled,
+                        SelectedEffectId = _selectedEffect?.Id ?? "softglow",
+                        AudioSensitivity = _audioSensitivity,
+                        SourceMonitorId = string.Empty,
+                        TargetMonitorIds = new System.Collections.Generic.List<string>()
+                    };
+    
+                    await _settingsService.SaveAsync(settings);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error saving settings: {ex.Message}");
+                }
+            }
+    
+            private void OnEffectSelectionChanged()
+            {
+                if (_effectsRenderingService == null || _selectedEffect == null) return;
+    
+                try
+                {
+                    _effectsRenderingService.SetCurrentEffect(_selectedEffect.Id);
+                    SaveSettingsAsync();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error changing effect to '{_selectedEffect.Id}': {ex.Message}");
+                }
+            }
+    
+            private void OnAudioSensitivityChanged()
+            {
+                if (_dataProcessingService != null)
+                {
+                    _dataProcessingService.AudioSensitivity = _audioSensitivity;
+                }
+                
+                SaveSettingsAsync();
+            }
+    
+            private void UpdateEffectsRenderingState()
+            {
+                if (_effectsRenderingService == null) return;
+    
+                try
+                {
+                    if (_isEnabled)
+                    {
+                        _effectsRenderingService.Start();
+                    }
+                    else
+                    {
+                        _effectsRenderingService.Stop();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Show error to user instead of hiding it
+                    System.Diagnostics.Debug.WriteLine($"Error updating effects rendering state: {ex.Message}");
+                    System.Windows.MessageBox.Show($"Error starting ambient effects: {ex.Message}\n\nDetails: {ex.StackTrace}", 
+                        "Effects Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                }
+            }
+    
+            protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+            }
+        }
+    }
+    ]]></file>
+  <file path="Services\SystemTrayService.cs"><![CDATA[
+    using System.Drawing;
+    using System.Windows.Forms;
+    
+    namespace AmbientEffectsEngine.Services;
+    
+    public class SystemTrayService : ISystemTrayService
+    {
+        private NotifyIcon? _notifyIcon;
+    
+        public void Initialize()
+        {
+            // Create the system tray icon
+            _notifyIcon = new NotifyIcon
+            {
+                Text = "Ambient Effects Engine",
+                Visible = true,
+                Icon = SystemIcons.Application // Use built-in icon for now
+            };
+    
+            // Create context menu
+            var contextMenu = new ContextMenuStrip();
+            contextMenu.Items.Add("Show", null, (s, e) => ShowMainWindow());
+            contextMenu.Items.Add("Hide", null, (s, e) => HideMainWindow());
+            contextMenu.Items.Add("-");
+            contextMenu.Items.Add("Exit", null, (s, e) => System.Windows.Application.Current.Shutdown());
+    
+            _notifyIcon.ContextMenuStrip = contextMenu;
+            _notifyIcon.DoubleClick += (s, e) => ShowMainWindow();
+        }
+    
+        public void ShowMainWindow()
+        {
+            var mainWindow = System.Windows.Application.Current.MainWindow;
+            if (mainWindow != null)
+            {
+                mainWindow.Show();
+                mainWindow.WindowState = System.Windows.WindowState.Normal;
+                mainWindow.Activate();
+            }
+        }
+    
+        public void HideMainWindow()
+        {
+            var mainWindow = System.Windows.Application.Current.MainWindow;
+            mainWindow?.Hide();
+        }
+    
+        public void Shutdown()
+        {
+            _notifyIcon?.Dispose();
+            _notifyIcon = null;
+        }
+    }
+    ]]></file>
+  <file path="Services\SettingsService.cs"><![CDATA[
+    using System;
+    using System.IO;
+    using System.Text.Json;
+    using System.Threading.Tasks;
+    using AmbientEffectsEngine.Models;
+    
+    namespace AmbientEffectsEngine.Services
+    {
+        public class SettingsService : ISettingsService
+        {
+            private readonly string _settingsDirectoryPath;
+            private readonly string _settingsFilePath;
+            private readonly string _backupFilePath;
+    
+            public SettingsService() : this(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "AmbientEffectsEngine"))
+            {
+            }
+    
+            // Constructor for testing with custom directory
+            internal SettingsService(string settingsDirectory)
+            {
+                _settingsDirectoryPath = settingsDirectory;
+                _settingsFilePath = Path.Combine(_settingsDirectoryPath, "settings.json");
+                _backupFilePath = Path.Combine(_settingsDirectoryPath, "settings.backup.json");
+            }
+    
+            public async Task<ApplicationSettings> LoadAsync()
+            {
+                try
+                {
+                    if (!File.Exists(_settingsFilePath))
+                    {
+                        return GetDefaults();
+                    }
+    
+                    var json = await File.ReadAllTextAsync(_settingsFilePath);
+                    var settings = JsonSerializer.Deserialize<ApplicationSettings>(json);
+                    
+                    return settings ?? GetDefaults();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Failed to load settings: {ex.Message}");
+                    
+                    // Try to load from backup
+                    if (File.Exists(_backupFilePath))
+                    {
+                        try
+                        {
+                            var backupJson = await File.ReadAllTextAsync(_backupFilePath);
+                            var backupSettings = JsonSerializer.Deserialize<ApplicationSettings>(backupJson);
+                            return backupSettings ?? GetDefaults();
+                        }
+                        catch (Exception backupEx)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Failed to load backup settings: {backupEx.Message}");
+                        }
+                    }
+                    
+                    return GetDefaults();
+                }
+            }
+    
+            public async Task SaveAsync(ApplicationSettings settings)
+            {
+                ArgumentNullException.ThrowIfNull(settings);
+    
+                try
+                {
+                    // Ensure directory exists
+                    Directory.CreateDirectory(_settingsDirectoryPath);
+    
+                    // Create backup if settings file exists
+                    if (File.Exists(_settingsFilePath))
+                    {
+                        File.Copy(_settingsFilePath, _backupFilePath, overwrite: true);
+                    }
+    
+                    var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions
+                    {
+                        WriteIndented = true
+                    });
+    
+                    await File.WriteAllTextAsync(_settingsFilePath, json);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Failed to save settings: {ex.Message}");
+                    throw;
+                }
+            }
+    
+            public ApplicationSettings GetDefaults()
+            {
+                return new ApplicationSettings
+                {
+                    IsEnabled = false,
+                    SelectedEffectId = "softglow",
+                    AudioSensitivity = 0.5f,
+                    SourceMonitorId = string.Empty,
+                    TargetMonitorIds = new System.Collections.Generic.List<string>()
+                };
+            }
+        }
+    }
+    ]]></file>
+  <file path="Services\MonitorDetectionService.cs"><![CDATA[
+    using System;
+    using System.Collections.Generic;
+    using System.Linq;
+    using System.Runtime.InteropServices;
+    using System.Threading.Tasks;
+    using AmbientEffectsEngine.Models;
+    
+    namespace AmbientEffectsEngine.Services
+    {
+        public class MonitorDetectionService : IMonitorDetectionService, IDisposable
+        {
+            private bool _isMonitoring;
+            private bool _disposed;
+    
+            public event EventHandler<MonitorConfigurationChangedEventArgs>? MonitorConfigurationChanged;
+    
+            public async Task<IEnumerable<DisplayMonitor>> GetConnectedMonitorsAsync()
+            {
+                return await Task.Run(() =>
+                {
+                    var monitors = new List<DisplayMonitor>();
+                    var primaryMonitorHandle = GetPrimaryMonitorHandle();
+    
+                    EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, MonitorEnumProc, IntPtr.Zero);
+    
+                    bool MonitorEnumProc(IntPtr hMonitor, IntPtr hdcMonitor, IntPtr lprcMonitor, IntPtr dwData)
+                    {
+                        var monitorInfo = new MONITORINFOEX();
+                        monitorInfo.cbSize = Marshal.SizeOf(monitorInfo);
+    
+                        if (GetMonitorInfo(hMonitor, ref monitorInfo))
+                        {
+                            var monitor = new DisplayMonitor
+                            {
+                                Id = monitorInfo.szDevice,
+                                Name = monitorInfo.szDevice,
+                                IsPrimary = hMonitor == primaryMonitorHandle
+                            };
+                            monitors.Add(monitor);
+                        }
+    
+                        return true;
+                    }
+    
+                    return monitors.AsEnumerable();
+                });
+            }
+    
+            public void StartMonitoring()
+            {
+                if (_isMonitoring || _disposed)
+                    return;
+    
+                // For now, just mark as monitoring without setting up actual change detection
+                // In a real implementation, this would set up a message window to receive WM_DISPLAYCHANGE
+                // Since display change monitoring is complex and not critical for basic functionality,
+                // we'll implement a simplified version that can be enhanced later
+                _isMonitoring = true;
+            }
+    
+            public void StopMonitoring()
+            {
+                if (!_isMonitoring)
+                    return;
+    
+                _isMonitoring = false;
+            }
+    
+    
+            private IntPtr GetPrimaryMonitorHandle()
+            {
+                const int MONITOR_DEFAULTTOPRIMARY = 1;
+                return MonitorFromPoint(new POINT { x = 0, y = 0 }, MONITOR_DEFAULTTOPRIMARY);
+            }
+    
+            public void Dispose()
+            {
+                if (_disposed)
+                    return;
+    
+                StopMonitoring();
+                _disposed = true;
+            }
+    
+            #region Windows API Declarations
+    
+            [DllImport("user32.dll")]
+            private static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip,
+                EnumDisplayMonitorsDelegate lpfnEnum, IntPtr dwData);
+    
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+            private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFOEX lpmi);
+    
+            [DllImport("user32.dll")]
+            private static extern IntPtr MonitorFromPoint(POINT pt, int dwFlags);
+    
+            private delegate bool EnumDisplayMonitorsDelegate(IntPtr hMonitor, IntPtr hdcMonitor,
+                IntPtr lprcMonitor, IntPtr dwData);
+    
+            [StructLayout(LayoutKind.Sequential)]
+            private struct POINT
+            {
+                public int x;
+                public int y;
+            }
+    
+            [StructLayout(LayoutKind.Sequential)]
+            private struct RECT
+            {
+                public int left;
+                public int top;
+                public int right;
+                public int bottom;
+            }
+    
+            [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+            private struct MONITORINFOEX
+            {
+                public int cbSize;
+                public RECT rcMonitor;
+                public RECT rcWork;
+                public int dwFlags;
+                [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+                public string szDevice;
+            }
+    
+            #endregion
+        }
+    }
+    ]]></file>
+  <file path="Services\ISystemTrayService.cs"><![CDATA[
+    namespace AmbientEffectsEngine.Services;
+    
+    public interface ISystemTrayService
+    {
+        void Initialize();
+        void ShowMainWindow();
+        void HideMainWindow();
+        void Shutdown();
+    }
+    ]]></file>
+  <file path="Services\ISettingsService.cs"><![CDATA[
+    using System.Threading.Tasks;
+    using AmbientEffectsEngine.Models;
+    
+    namespace AmbientEffectsEngine.Services
+    {
+        public interface ISettingsService
+        {
+            Task<ApplicationSettings> LoadAsync();
+            Task SaveAsync(ApplicationSettings settings);
+            ApplicationSettings GetDefaults();
+        }
+    }
+    ]]></file>
+  <file path="Services\IMonitorDetectionService.cs"><![CDATA[
+    using System;
+    using System.Collections.Generic;
+    using System.Threading.Tasks;
+    using AmbientEffectsEngine.Models;
+    
+    namespace AmbientEffectsEngine.Services
+    {
+        public interface IMonitorDetectionService
+        {
+            /// <summary>
+            /// Gets all connected monitors with their display information
+            /// </summary>
+            /// <returns>List of DisplayMonitor objects representing connected displays</returns>
+            Task<IEnumerable<DisplayMonitor>> GetConnectedMonitorsAsync();
+            
+            /// <summary>
+            /// Event fired when monitor configuration changes (monitors connected/disconnected)
+            /// </summary>
+            event EventHandler<MonitorConfigurationChangedEventArgs>? MonitorConfigurationChanged;
+            
+            /// <summary>
+            /// Starts monitoring for display configuration changes
+            /// </summary>
+            void StartMonitoring();
+            
+            /// <summary>
+            /// Stops monitoring for display configuration changes
+            /// </summary>
+            void StopMonitoring();
+        }
+        
+        public class MonitorConfigurationChangedEventArgs : EventArgs
+        {
+            public IEnumerable<DisplayMonitor> ConnectedMonitors { get; }
+            
+            public MonitorConfigurationChangedEventArgs(IEnumerable<DisplayMonitor> connectedMonitors)
+            {
+                ConnectedMonitors = connectedMonitors ?? throw new ArgumentNullException(nameof(connectedMonitors));
+            }
+        }
+    }
+    ]]></file>
+  <file path="Models\ProcessedData.cs"><![CDATA[
+    using System;
+    using System.Drawing;
+    
+    namespace AmbientEffectsEngine.Models
+    {
+        public class ProcessedData
+        {
+            public Color DominantColor { get; set; }
+            public float AudioIntensity { get; set; } // 0.0-1.0 normalized range
+            public DateTime Timestamp { get; set; }
+            
+            /// <summary>
+            /// Audio intensity as a percentage (0-100 scale) for UI display purposes
+            /// </summary>
+            public float AudioIntensityPercent => AudioIntensity * 100.0f;
+    
+            public ProcessedData(Color dominantColor, float audioIntensity, DateTime timestamp)
+            {
+                DominantColor = dominantColor;
+                AudioIntensity = Math.Clamp(audioIntensity, 0.0f, 1.0f);
+                Timestamp = timestamp;
+            }
+    
+            public ProcessedData() : this(Color.Black, 0.0f, DateTime.UtcNow)
+            {
+            }
+        }
+    }
+    ]]></file>
+  <file path="Models\EffectStyle.cs"><![CDATA[
+    namespace AmbientEffectsEngine.Models
+    {
+        public class EffectStyle
+        {
+            public string Id { get; set; } = string.Empty;
+            public string Name { get; set; } = string.Empty;
+            public string Description { get; set; } = string.Empty;
+        }
+    }
+    ]]></file>
+  <file path="Models\DisplayMonitor.cs"><![CDATA[
+    namespace AmbientEffectsEngine.Models
+    {
+        public class DisplayMonitor
+        {
+            public string Id { get; set; } = string.Empty;
+            public string Name { get; set; } = string.Empty;
+            public bool IsPrimary { get; set; } = false;
+        }
+    }
+    ]]></file>
+  <file path="Models\ApplicationSettings.cs"><![CDATA[
+    using System.Collections.Generic;
+    
+    namespace AmbientEffectsEngine.Models
+    {
+        public class ApplicationSettings
+        {
+            public bool IsEnabled { get; set; } = false;
+            public string SelectedEffectId { get; set; } = string.Empty;
+            public float AudioSensitivity { get; set; } = 0.5f;
+            public string SourceMonitorId { get; set; } = string.Empty;
+            public List<string> TargetMonitorIds { get; set; } = new List<string>();
+        }
+    }
+    ]]></file>
+  <file path="Services\Rendering\IEffectsRenderingService.cs"><![CDATA[
+    using System;
+    using System.Collections.Generic;
+    
+    namespace AmbientEffectsEngine.Services.Rendering
+    {
+        public interface IEffectsRenderingService : IDisposable
+        {
+            event EventHandler<string>? StatusChanged;
+            
+            bool IsRunning { get; }
+            
+            void Start();
+            void Stop();
+            void SetCurrentEffect(string effectId);
+            void SetTargetMonitors(IEnumerable<string> monitorIds);
+        }
+    }
+    ]]></file>
+  <file path="Services\Rendering\IEffectFactory.cs"><![CDATA[
+    using System;
+    using System.Collections.Generic;
+    using AmbientEffectsEngine.Services.Rendering.Effects;
+    
+    namespace AmbientEffectsEngine.Services.Rendering
+    {
+        /// <summary>
+        /// Interface for creating and managing effect instances.
+        /// </summary>
+        public interface IEffectFactory
+        {
+            /// <summary>
+            /// Registers a new effect type with the factory.
+            /// </summary>
+            /// <param name="effectId">Unique identifier for the effect type</param>
+            /// <param name="creator">Factory function to create instances of the effect</param>
+            void RegisterEffect(string effectId, Func<IEffect> creator);
+    
+            /// <summary>
+            /// Creates a new instance of the specified effect type.
+            /// </summary>
+            /// <param name="effectId">The effect type identifier</param>
+            /// <returns>A new instance of the requested effect</returns>
+            IEffect CreateEffect(string effectId);
+    
+            /// <summary>
+            /// Gets all available effect types that can be created by this factory.
+            /// </summary>
+            /// <returns>Collection of effect identifiers</returns>
+            IEnumerable<string> GetAvailableEffectIds();
+    
+            /// <summary>
+            /// Checks if an effect type is registered with the factory.
+            /// </summary>
+            /// <param name="effectId">The effect type identifier to check</param>
+            /// <returns>True if the effect type is registered, false otherwise</returns>
+            bool IsEffectRegistered(string effectId);
+    
+            /// <summary>
+            /// Unregisters an effect type from the factory.
+            /// </summary>
+            /// <param name="effectId">The effect type identifier to unregister</param>
+            /// <returns>True if the effect was unregistered, false if it wasn't registered</returns>
+            bool UnregisterEffect(string effectId);
+        }
+    }
+    ]]></file>
+  <file path="Services\Rendering\EffectsRenderingService.cs"><![CDATA[
+    using System;
+    using System.Collections.Generic;
+    using System.Linq;
+    using System.Threading.Tasks;
+    using AmbientEffectsEngine.Models;
+    using AmbientEffectsEngine.Services.Processing;
+    using AmbientEffectsEngine.Services.Rendering.Effects;
+    
+    namespace AmbientEffectsEngine.Services.Rendering
+    {
+        public class EffectsRenderingService : IEffectsRenderingService
+        {
+            private readonly IDataProcessingService _dataProcessingService;
+            private readonly IEffectFactory _effectFactory;
+            private readonly IMonitorDetectionService _monitorDetectionService;
+            private List<DisplayMonitor> _availableMonitors = new List<DisplayMonitor>();
+            private List<string> _targetMonitorIds = new List<string>();
+            private IEffect? _currentEffect;
+            private string _currentEffectId = "softglow"; // Default effect
+            private bool _disposed = false;
+            private bool _isRunning = false;
+    
+            public event EventHandler<string>? StatusChanged;
+            
+            public bool IsRunning => _isRunning;
+    
+            public EffectsRenderingService(IDataProcessingService dataProcessingService, IEffectFactory effectFactory, IMonitorDetectionService monitorDetectionService)
+            {
+                _dataProcessingService = dataProcessingService ?? throw new ArgumentNullException(nameof(dataProcessingService));
+                _effectFactory = effectFactory ?? throw new ArgumentNullException(nameof(effectFactory));
+                _monitorDetectionService = monitorDetectionService ?? throw new ArgumentNullException(nameof(monitorDetectionService));
+                
+                // Subscribe to data processing events
+                _dataProcessingService.ProcessedDataAvailable += OnProcessedDataAvailable;
+                
+                // Subscribe to monitor configuration changes
+                _monitorDetectionService.MonitorConfigurationChanged += OnMonitorConfigurationChanged;
+                
+                // Initialize monitor detection
+                _ = LoadMonitorsAsync();
+            }
+    
+            public void Start()
+            {
+                if (_disposed || _isRunning) return;
+    
+                try
+                {
+                    InitializeCurrentEffect();
+                    _currentEffect?.Show();
+                    
+                    _isRunning = true;
+                    OnStatusChanged($"Effects rendering started with {_currentEffect?.Name ?? "unknown"} effect");
+                }
+                catch (Exception ex)
+                {
+                    OnStatusChanged($"Failed to start effects rendering: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($"Effects Rendering Error: {ex}");
+                    throw;
+                }
+            }
+    
+            public void Stop()
+            {
+                if (!_isRunning) return;
+    
+                try
+                {
+                    _currentEffect?.Hide();
+                    _isRunning = false;
+                    OnStatusChanged("Effects rendering stopped");
+                }
+                catch (Exception ex)
+                {
+                    OnStatusChanged($"Error stopping effects rendering: {ex.Message}");
+                    throw;
+                }
+            }
+    
+            public void SetCurrentEffect(string effectId)
+            {
+                if (string.IsNullOrWhiteSpace(effectId) || _currentEffectId == effectId) return;
+    
+                try
+                {
+                    var wasRunning = _isRunning;
+                    
+                    // Stop current effect if running
+                    if (wasRunning)
+                    {
+                        _currentEffect?.Hide();
+                    }
+                    
+                    // Dispose current effect
+                    _currentEffect?.Dispose();
+                    _currentEffect = null;
+                    
+                    // Update effect ID
+                    _currentEffectId = effectId;
+                    
+                    // Initialize new effect
+                    InitializeCurrentEffect();
+                    
+                    // Show new effect if we were running
+                    if (wasRunning)
+                    {
+                        _currentEffect?.Show();
+                    }
+                    
+                    OnStatusChanged($"Switched to {_currentEffect?.Name ?? "unknown"} effect");
+                }
+                catch (Exception ex)
+                {
+                    OnStatusChanged($"Failed to switch to effect '{effectId}': {ex.Message}");
+                    throw;
+                }
+            }
+    
+            public void SetTargetMonitors(IEnumerable<string> monitorIds)
+            {
+                if (monitorIds == null) throw new ArgumentNullException(nameof(monitorIds));
+    
+                var newTargetIds = monitorIds.ToList();
+                
+                // If target monitors haven't changed, no need to update
+                if (_targetMonitorIds.SequenceEqual(newTargetIds)) return;
+    
+                try
+                {
+                    var wasRunning = _isRunning;
+                    
+                    // Stop current effect if running to reinitialize with new monitors
+                    if (wasRunning)
+                    {
+                        _currentEffect?.Hide();
+                    }
+                    
+                    // Update target monitor IDs
+                    _targetMonitorIds = newTargetIds;
+                    
+                    // Reinitialize effect with new monitors if we have a current effect
+                    if (_currentEffect != null)
+                    {
+                        _currentEffect.Dispose();
+                        _currentEffect = null;
+                        InitializeCurrentEffect();
+                    }
+                    
+                    // Restart effect if it was running
+                    if (wasRunning)
+                    {
+                        _currentEffect?.Show();
+                    }
+                    
+                    var targetCount = GetTargetMonitors().Count();
+                    OnStatusChanged($"Updated target monitors: {targetCount} monitor(s) selected for effects");
+                }
+                catch (Exception ex)
+                {
+                    OnStatusChanged($"Failed to update target monitors: {ex.Message}");
+                    throw;
+                }
+            }
+    
+            private void InitializeCurrentEffect()
+            {
+                if (!_effectFactory.IsEffectRegistered(_currentEffectId))
+                {
+                    throw new InvalidOperationException($"Effect '{_currentEffectId}' is not registered");
+                }
+    
+                _currentEffect = _effectFactory.CreateEffect(_currentEffectId);
+                
+                // Initialize effect with selected target monitors
+                var targetMonitors = GetTargetMonitors().ToList();
+                _currentEffect.Initialize(targetMonitors);
+            }
+    
+            private IEnumerable<DisplayMonitor> GetTargetMonitors()
+            {
+                // If no specific targets are set, default to all secondary monitors
+                if (!_targetMonitorIds.Any())
+                {
+                    return _availableMonitors.Where(m => !m.IsPrimary);
+                }
+    
+                // Return monitors that match the target IDs and are not primary
+                return _availableMonitors.Where(m => _targetMonitorIds.Contains(m.Id) && !m.IsPrimary);
+            }
+    
+            private void OnProcessedDataAvailable(object? sender, ProcessedDataEventArgs e)
+            {
+                if (_isRunning && e.Data != null && _currentEffect != null)
+                {
+                    _currentEffect.UpdateEffect(e.Data);
+                }
+            }
+    
+            private async Task LoadMonitorsAsync()
+            {
+                try
+                {
+                    var monitors = await _monitorDetectionService.GetConnectedMonitorsAsync();
+                    _availableMonitors = monitors.ToList();
+    
+                    OnStatusChanged($"Detected {_availableMonitors.Count} monitors ({_availableMonitors.Count(m => !m.IsPrimary)} secondary)");
+                }
+                catch (Exception ex)
+                {
+                    OnStatusChanged($"Failed to load monitors: {ex.Message}");
+                    // Don't throw here to avoid breaking service initialization
+                    _availableMonitors.Clear();
+                }
+            }
+    
+            private async void OnMonitorConfigurationChanged(object? sender, MonitorConfigurationChangedEventArgs e)
+            {
+                try
+                {
+                    // Reload available monitors when configuration changes
+                    await LoadMonitorsAsync();
+                    
+                    // Reinitialize current effect if running to adapt to new monitor configuration
+                    if (_isRunning && _currentEffect != null)
+                    {
+                        var wasRunning = _isRunning;
+                        _currentEffect.Hide();
+                        _currentEffect.Dispose();
+                        _currentEffect = null;
+                        
+                        InitializeCurrentEffect();
+                        
+                        if (wasRunning)
+                        {
+                            _currentEffect?.Show();
+                        }
+                    }
+                    
+                    OnStatusChanged("Monitor configuration changed - effects updated");
+                }
+                catch (Exception ex)
+                {
+                    OnStatusChanged($"Error handling monitor configuration change: {ex.Message}");
+                }
+            }
+    
+            private void OnStatusChanged(string status)
+            {
+                StatusChanged?.Invoke(this, status);
+            }
+    
+            public void Dispose()
+            {
+                if (!_disposed)
+                {
+                    Stop();
+                    
+                    if (_dataProcessingService != null)
+                    {
+                        _dataProcessingService.ProcessedDataAvailable -= OnProcessedDataAvailable;
+                    }
+                    
+                    if (_monitorDetectionService != null)
+                    {
+                        _monitorDetectionService.MonitorConfigurationChanged -= OnMonitorConfigurationChanged;
+                    }
+                    
+                    _currentEffect?.Dispose();
+                    _disposed = true;
+                }
+            }
+        }
+    }
+    ]]></file>
+  <file path="Services\Rendering\EffectFactory.cs"><![CDATA[
+    using System;
+    using System.Collections.Generic;
+    using System.Linq;
+    using AmbientEffectsEngine.Services.Rendering.Effects;
+    
+    namespace AmbientEffectsEngine.Services.Rendering
+    {
+        /// <summary>
+        /// Factory for creating and managing effect instances.
+        /// Implements the Factory pattern to provide centralized effect creation and registration.
+        /// </summary>
+        public class EffectFactory : IEffectFactory
+        {
+            private readonly Dictionary<string, Func<IEffect>> _effectCreators = new();
+    
+            public EffectFactory()
+            {
+                // Register built-in effects
+                RegisterEffect("softglow", () => new SoftGlowEffect());
+                RegisterEffect("generativevisualizer", () => new GenerativeVisualizerEffect());
+            }
+    
+            /// <summary>
+            /// Registers a new effect type with the factory.
+            /// </summary>
+            /// <param name="effectId">Unique identifier for the effect type</param>
+            /// <param name="creator">Factory function to create instances of the effect</param>
+            public void RegisterEffect(string effectId, Func<IEffect> creator)
+            {
+                if (string.IsNullOrWhiteSpace(effectId))
+                    throw new ArgumentException("Effect ID cannot be null or empty", nameof(effectId));
+                
+                if (creator == null)
+                    throw new ArgumentNullException(nameof(creator));
+    
+                _effectCreators[effectId.ToLowerInvariant()] = creator;
+            }
+    
+            /// <summary>
+            /// Creates a new instance of the specified effect type.
+            /// </summary>
+            /// <param name="effectId">The effect type identifier</param>
+            /// <returns>A new instance of the requested effect</returns>
+            /// <exception cref="ArgumentException">Thrown when the effect type is not registered</exception>
+            public IEffect CreateEffect(string effectId)
+            {
+                if (string.IsNullOrWhiteSpace(effectId))
+                    throw new ArgumentException("Effect ID cannot be null or empty", nameof(effectId));
+    
+                var normalizedId = effectId.ToLowerInvariant();
+                if (!_effectCreators.TryGetValue(normalizedId, out var creator))
+                {
+                    throw new ArgumentException($"Effect type '{effectId}' is not registered", nameof(effectId));
+                }
+    
+                return creator();
+            }
+    
+            /// <summary>
+            /// Gets all available effect types that can be created by this factory.
+            /// </summary>
+            /// <returns>Collection of effect identifiers</returns>
+            public IEnumerable<string> GetAvailableEffectIds()
+            {
+                return _effectCreators.Keys.ToList();
+            }
+    
+            /// <summary>
+            /// Checks if an effect type is registered with the factory.
+            /// </summary>
+            /// <param name="effectId">The effect type identifier to check</param>
+            /// <returns>True if the effect type is registered, false otherwise</returns>
+            public bool IsEffectRegistered(string effectId)
+            {
+                if (string.IsNullOrWhiteSpace(effectId))
+                    return false;
+    
+                return _effectCreators.ContainsKey(effectId.ToLowerInvariant());
+            }
+    
+            /// <summary>
+            /// Unregisters an effect type from the factory.
+            /// </summary>
+            /// <param name="effectId">The effect type identifier to unregister</param>
+            /// <returns>True if the effect was unregistered, false if it wasn't registered</returns>
+            public bool UnregisterEffect(string effectId)
+            {
+                if (string.IsNullOrWhiteSpace(effectId))
+                    return false;
+    
+                return _effectCreators.Remove(effectId.ToLowerInvariant());
+            }
+        }
+    }
+    ]]></file>
+  <file path="Services\Processing\IDataProcessingService.cs"><![CDATA[
+    using System;
+    using AmbientEffectsEngine.Models;
+    
+    namespace AmbientEffectsEngine.Services.Processing
+    {
+        public interface IDataProcessingService : IDisposable
+        {
+            event EventHandler<ProcessedDataEventArgs>? ProcessedDataAvailable;
+            
+            bool IsProcessing { get; }
+            float AudioSensitivity { get; set; }
+            
+            void Start();
+            void Stop();
+        }
+        
+        public class ProcessedDataEventArgs : EventArgs
+        {
+            public ProcessedData Data { get; }
+            
+            public ProcessedDataEventArgs(ProcessedData data)
+            {
+                Data = data ?? throw new ArgumentNullException(nameof(data));
+            }
+        }
+    }
+    ]]></file>
+  <file path="Services\Processing\DataProcessingService.cs"><![CDATA[
+    using System;
+    using System.Collections.Generic;
+    using System.Drawing;
+    using System.Linq;
+    using System.Threading;
+    using System.Threading.Tasks;
+    using AmbientEffectsEngine.Models;
+    using AmbientEffectsEngine.Services.Capture;
+    
+    namespace AmbientEffectsEngine.Services.Processing
+    {
+        public class DataProcessingService : IDataProcessingService
+        {
+            private readonly IScreenCaptureService _screenCaptureService;
+            private readonly IAudioCaptureService _audioCaptureService;
+            private readonly object _lock = new object();
+            private volatile bool _isProcessing;
+            private bool _disposed;
+            private float _audioSensitivity = 0.5f;
+    
+            // Smoothing data
+            private Color _lastDominantColor = Color.Black;
+            private float _lastAudioIntensity = 0.0f;
+            private readonly Queue<Color> _colorHistory = new Queue<Color>();
+            private readonly Queue<float> _audioHistory = new Queue<float>();
+            private const int SMOOTHING_WINDOW = 5;
+    
+            public event EventHandler<ProcessedDataEventArgs>? ProcessedDataAvailable;
+    
+            public bool IsProcessing
+            {
+                get
+                {
+                    lock (_lock)
+                    {
+                        return _isProcessing;
+                    }
+                }
+            }
+    
+            public float AudioSensitivity
+            {
+                get
+                {
+                    lock (_lock)
+                    {
+                        return _audioSensitivity;
+                    }
+                }
+                set
+                {
+                    lock (_lock)
+                    {
+                        _audioSensitivity = Math.Clamp(value, 0.0f, 1.0f);
+                    }
+                }
+            }
+    
+            public DataProcessingService(IScreenCaptureService screenCaptureService, IAudioCaptureService audioCaptureService)
+            {
+                _screenCaptureService = screenCaptureService ?? throw new ArgumentNullException(nameof(screenCaptureService));
+                _audioCaptureService = audioCaptureService ?? throw new ArgumentNullException(nameof(audioCaptureService));
+            }
+    
+            public void Start()
+            {
+                lock (_lock)
+                {
+                    if (_disposed)
+                        throw new ObjectDisposedException(nameof(DataProcessingService));
+    
+                    if (_isProcessing)
+                        return;
+    
+                    // Subscribe to capture service events
+                    _screenCaptureService.FrameCaptured += OnFrameCaptured;
+                    _audioCaptureService.AudioDataAvailable += OnAudioDataAvailable;
+    
+                    _isProcessing = true;
+                }
+            }
+    
+            public void Stop()
+            {
+                lock (_lock)
+                {
+                    if (!_isProcessing)
+                        return;
+    
+                    // Unsubscribe from capture service events
+                    _screenCaptureService.FrameCaptured -= OnFrameCaptured;
+                    _audioCaptureService.AudioDataAvailable -= OnAudioDataAvailable;
+    
+                    _isProcessing = false;
+                }
+            }
+    
+            private void OnFrameCaptured(object? sender, ScreenCaptureFrameEventArgs e)
+            {
+                if (!_isProcessing) return;
+    
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        var dominantColor = CalculateDominantColor(e);
+                        var smoothedColor = SmoothColor(dominantColor);
+                        
+                        // Create processed data with current audio intensity
+                        var processedData = new ProcessedData(smoothedColor, _lastAudioIntensity, e.Timestamp);
+                        
+                        // Fire event with minimal latency
+                        ProcessedDataAvailable?.Invoke(this, new ProcessedDataEventArgs(processedData));
+                    }
+                    catch (Exception ex)
+                    {
+                        // Handle processing errors gracefully - don't crash the service
+                        System.Diagnostics.Debug.WriteLine($"[DataProcessing] Frame processing error: {ex.Message}");
+                    }
+                });
+            }
+    
+            private void OnAudioDataAvailable(object? sender, AudioDataEventArgs e)
+            {
+                if (!_isProcessing) return;
+    
+                // Process on background thread to avoid blocking audio capture
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        var intensity = CalculateAudioIntensity(e.VolumeLevel);
+                        var smoothedIntensity = SmoothAudioIntensity(intensity);
+                        
+                        _lastAudioIntensity = smoothedIntensity;
+    
+                        // Create processed data with current color
+                        var processedData = new ProcessedData(_lastDominantColor, smoothedIntensity, e.Timestamp);
+                        
+                        // Fire event with minimal latency
+                        ProcessedDataAvailable?.Invoke(this, new ProcessedDataEventArgs(processedData));
+                    }
+                    catch (Exception ex)
+                    {
+                        // Handle processing errors gracefully
+                        System.Diagnostics.Debug.WriteLine($"[DataProcessing] Audio processing error: {ex.Message}");
+                    }
+                });
+            }
+    
+            private Color CalculateDominantColor(ScreenCaptureFrameEventArgs frameArgs)
+            {
+                // For now, return a simple calculation - in a real implementation,
+                // this would analyze the actual frame data from frameArgs.Surface
+                
+                // Mock implementation that generates a color based on frame dimensions and timestamp
+                var hash = (frameArgs.Width * frameArgs.Height + frameArgs.Timestamp.Millisecond) % 360;
+                var r = (byte)((Math.Sin(hash * 0.1) + 1) * 127.5);
+                var g = (byte)((Math.Cos(hash * 0.1) + 1) * 127.5);
+                var b = (byte)((Math.Sin(hash * 0.2) + 1) * 127.5);
+                
+                return Color.FromArgb(255, r, g, b);
+            }
+    
+            private float CalculateAudioIntensity(float volumeLevel)
+            {
+                // Normalize volume level to 0.0-1.0 range
+                var normalizedVolume = Math.Clamp(volumeLevel, 0.0f, 1.0f);
+                
+                // Apply audio sensitivity scaling
+                float sensitivity;
+                lock (_lock)
+                {
+                    sensitivity = _audioSensitivity;
+                }
+                
+                // Scale the intensity based on sensitivity
+                // Higher sensitivity = more responsive to quieter sounds
+                var scaledIntensity = normalizedVolume * (0.5f + sensitivity);
+                
+                return Math.Clamp(scaledIntensity, 0.0f, 1.0f);
+            }
+    
+            private Color SmoothColor(Color newColor)
+            {
+                lock (_lock)
+                {
+                    _colorHistory.Enqueue(newColor);
+                    
+                    if (_colorHistory.Count > SMOOTHING_WINDOW)
+                        _colorHistory.Dequeue();
+    
+                    // Average the colors for smoothing
+                    var avgR = _colorHistory.Average(c => c.R);
+                    var avgG = _colorHistory.Average(c => c.G);
+                    var avgB = _colorHistory.Average(c => c.B);
+    
+                    var smoothedColor = Color.FromArgb(255, (int)avgR, (int)avgG, (int)avgB);
+                    _lastDominantColor = smoothedColor;
+                    
+                    return smoothedColor;
+                }
+            }
+    
+            private float SmoothAudioIntensity(float newIntensity)
+            {
+                lock (_lock)
+                {
+                    _audioHistory.Enqueue(newIntensity);
+                    
+                    if (_audioHistory.Count > SMOOTHING_WINDOW)
+                        _audioHistory.Dequeue();
+    
+                    // Average for smoothing
+                    return _audioHistory.Average();
+                }
+            }
+    
+            public void Dispose()
+            {
+                if (_disposed) return;
+                
+                Stop();
+                _disposed = true;
+            }
+        }
+    }
+    ]]></file>
+  <file path="Services\Capture\ScreenCaptureService.cs"><![CDATA[
+    using System;
+    using System.Drawing;
+    using System.Drawing.Imaging;
+    using System.IO;
+    using System.Runtime.InteropServices;
+    using System.Threading;
+    using System.Threading.Tasks;
+    using System.Windows.Forms;
+    
+    namespace AmbientEffectsEngine.Services.Capture
+    {
+        public class ScreenCaptureService : IScreenCaptureService
+        {
+            private System.Threading.Timer _captureTimer;
+            private bool _isCapturing;
+            private readonly object _lockObject = new object();
+            private readonly int _captureIntervalMs = 33; // ~30 FPS
+    
+            public event EventHandler<ScreenCaptureFrameEventArgs> FrameCaptured;
+            public event EventHandler<string> CaptureError;
+    
+            public bool IsCapturing 
+            { 
+                get 
+                { 
+                    lock (_lockObject) 
+                    { 
+                        return _isCapturing; 
+                    } 
+                } 
+            }
+    
+            public void Start()
+            {
+                try
+                {
+                    lock (_lockObject)
+                    {
+                        if (_isCapturing)
+                            return;
+    
+                        // For now, use GDI+ capture as a working baseline
+                        // This will be replaced with Windows.Graphics.Capture when available
+                        _captureTimer = new System.Threading.Timer(CaptureFrame, null, 0, _captureIntervalMs);
+                        _isCapturing = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    CaptureError?.Invoke(this, $"Failed to start capture: {ex.Message}");
+                }
+            }
+    
+            public void Stop()
+            {
+                lock (_lockObject)
+                {
+                    if (!_isCapturing)
+                        return;
+    
+                    _captureTimer?.Dispose();
+                    _captureTimer = null;
+                    _isCapturing = false;
+                }
+            }
+    
+            private void CaptureFrame(object state)
+            {
+                try
+                {
+                    var primaryScreen = Screen.PrimaryScreen;
+                    var bounds = primaryScreen.Bounds;
+    
+                    using var bitmap = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppArgb);
+                    using var graphics = Graphics.FromImage(bitmap);
+                    
+                    graphics.CopyFromScreen(bounds.X, bounds.Y, 0, 0, bounds.Size, CopyPixelOperation.SourceCopy);
+    
+                    // Create a mock Direct3D surface for compatibility with the interface
+                    var surface = new MockDirect3DSurface(bitmap);
+                    
+                    var eventArgs = new ScreenCaptureFrameEventArgs(
+                        surface,
+                        bounds.Width,
+                        bounds.Height,
+                        DateTime.UtcNow);
+    
+                    FrameCaptured?.Invoke(this, eventArgs);
+                }
+                catch (Exception ex)
+                {
+                    CaptureError?.Invoke(this, $"Frame capture error: {ex.Message}");
+                }
+            }
+    
+            public void Dispose()
+            {
+                Stop();
+            }
+        }
+    
+        // Temporary mock implementation for development/testing
+        public class MockDirect3DSurface : IDisposable
+        {
+            private readonly byte[] _imageData;
+            
+            public MockDirect3DSurface(Bitmap bitmap)
+            {
+                using var stream = new MemoryStream();
+                bitmap.Save(stream, ImageFormat.Png);
+                _imageData = stream.ToArray();
+            }
+    
+            public byte[] GetImageData() => _imageData;
+    
+            public void Dispose()
+            {
+                // Mock implementation - nothing to dispose
+            }
+        }
+    }
+    ]]></file>
+  <file path="Services\Capture\IScreenCaptureService.cs"><![CDATA[
+    using System;
+    
+    namespace AmbientEffectsEngine.Services.Capture
+    {
+        public interface IScreenCaptureService : IDisposable
+        {
+            event EventHandler<ScreenCaptureFrameEventArgs> FrameCaptured;
+            event EventHandler<string> CaptureError;
+            
+            bool IsCapturing { get; }
+            
+            void Start();
+            void Stop();
+        }
+    
+        public class ScreenCaptureFrameEventArgs : EventArgs
+        {
+            public object Surface { get; }
+            public int Width { get; }
+            public int Height { get; }
+            public DateTime Timestamp { get; }
+    
+            public ScreenCaptureFrameEventArgs(object surface, int width, int height, DateTime timestamp)
+            {
+                Surface = surface;
+                Width = width;
+                Height = height;
+                Timestamp = timestamp;
+            }
+        }
+    }
+    ]]></file>
+  <file path="Services\Capture\IAudioCaptureService.cs"><![CDATA[
+    using System;
+    
+    namespace AmbientEffectsEngine.Services.Capture
+    {
+        public interface IAudioCaptureService : IDisposable
+        {
+            event EventHandler<AudioDataEventArgs>? AudioDataAvailable;
+            
+            bool IsCapturing { get; }
+            
+            void Start();
+            void Stop();
+        }
+        
+        public class AudioDataEventArgs : EventArgs
+        {
+            public float VolumeLevel { get; set; }
+            public byte[] AudioData { get; set; } = Array.Empty<byte>();
+            public int SampleRate { get; set; }
+            public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+        }
+    }
+    ]]></file>
+  <file path="Services\Capture\AudioCaptureService.cs"><![CDATA[
+    using System;
+    using System.Diagnostics;
+    using System.Threading;
+    using NAudio.Wasapi;
+    using NAudio.Wave;
+    
+    namespace AmbientEffectsEngine.Services.Capture
+    {
+        public class AudioCaptureService : IAudioCaptureService
+        {
+            private WasapiLoopbackCapture? _capture;
+            private bool _disposed;
+            private readonly object _lock = new object();
+            private volatile bool _isCapturing;
+            private int _audioDataCount;
+    
+            public event EventHandler<AudioDataEventArgs>? AudioDataAvailable;
+            
+            public bool IsCapturing 
+            { 
+                get 
+                { 
+                    lock (_lock)
+                    {
+                        return _isCapturing && _capture != null;
+                    }
+                } 
+            }
+    
+            public void Start()
+            {
+                lock (_lock)
+                {
+                    if (_disposed)
+                        throw new ObjectDisposedException(nameof(AudioCaptureService));
+    
+                    if (_isCapturing || _capture != null)
+                        return;
+    
+                    try
+                    {
+                        _capture = new WasapiLoopbackCapture();
+                        _capture.DataAvailable += OnDataAvailable;
+                        _capture.RecordingStopped += OnRecordingStopped;
+                        
+                        Debug.WriteLine($"[AudioCapture] Starting audio capture - Format: {_capture.WaveFormat}");
+                        _capture.StartRecording();
+                        _isCapturing = true;
+                        _audioDataCount = 0;
+                        Debug.WriteLine("[AudioCapture] Audio capture started successfully");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[AudioCapture] Failed to start audio capture: {ex.Message}");
+                        _capture?.Dispose();
+                        _capture = null;
+                        _isCapturing = false;
+                        throw new InvalidOperationException("Failed to start audio capture.", ex);
+                    }
+                }
+            }
+    
+            public void Stop()
+            {
+                lock (_lock)
+                {
+                    if (!_isCapturing || _capture == null)
+                        return;
+    
+                    try
+                    {
+                        Debug.WriteLine("[AudioCapture] Stopping audio capture");
+                        _capture.StopRecording();
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[AudioCapture] Exception during stop: {ex.Message}");
+                    }
+                    finally
+                    {
+                        _isCapturing = false;
+                        Debug.WriteLine($"[AudioCapture] Audio capture stopped. Total data events received: {_audioDataCount}");
+                    }
+                }
+            }
+    
+            private void OnDataAvailable(object? sender, WaveInEventArgs e)
+            {
+                if (_disposed || e.Buffer == null || e.BytesRecorded == 0)
+                    return;
+    
+                try
+                {
+                    _audioDataCount++;
+                    var volumeLevel = CalculateVolumeLevel(e.Buffer, e.BytesRecorded);
+                    var sampleRate = _capture?.WaveFormat?.SampleRate ?? 44100;
+                    
+                    var audioData = new byte[e.BytesRecorded];
+                    Array.Copy(e.Buffer, audioData, e.BytesRecorded);
+    
+                    var eventArgs = new AudioDataEventArgs
+                    {
+                        VolumeLevel = volumeLevel,
+                        AudioData = audioData,
+                        SampleRate = sampleRate,
+                        Timestamp = DateTime.UtcNow
+                    };
+    
+                    // Log every 100th data event to avoid spam
+                    if (_audioDataCount % 100 == 0)
+                    {
+                        Debug.WriteLine($"[AudioCapture] Data #{_audioDataCount}: {e.BytesRecorded} bytes, Volume: {volumeLevel:F3}, Rate: {sampleRate}Hz");
+                    }
+    
+                    AudioDataAvailable?.Invoke(this, eventArgs);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[AudioCapture] Exception in OnDataAvailable: {ex.Message}");
+                }
+            }
+    
+            private void OnRecordingStopped(object? sender, StoppedEventArgs e)
+            {
+                lock (_lock)
+                {
+                    _isCapturing = false;
+                    
+                    if (_capture != null)
+                    {
+                        _capture.DataAvailable -= OnDataAvailable;
+                        _capture.RecordingStopped -= OnRecordingStopped;
+                        _capture.Dispose();
+                        _capture = null;
+                    }
+                }
+    
+                if (e.Exception != null)
+                {
+                    Debug.WriteLine($"[AudioCapture] Recording stopped with error: {e.Exception.Message}");
+                }
+                else
+                {
+                    Debug.WriteLine("[AudioCapture] Recording stopped normally");
+                }
+            }
+    
+            private static float CalculateVolumeLevel(byte[] buffer, int bytesRecorded)
+            {
+                if (bytesRecorded == 0)
+                    return 0f;
+    
+                long sum = 0;
+                int sampleCount = bytesRecorded / 4; // 32-bit samples (4 bytes each)
+                
+                for (int i = 0; i < bytesRecorded - 3; i += 4)
+                {
+                    var sample = BitConverter.ToInt32(buffer, i);
+                    sum += Math.Abs(sample);
+                }
+    
+                if (sampleCount == 0)
+                    return 0f;
+    
+                var average = sum / (double)sampleCount;
+                var normalizedLevel = (float)(average / int.MaxValue);
+                
+                return Math.Min(1.0f, normalizedLevel);
+            }
+    
+            public void Dispose()
+            {
+                Dispose(true);
+                GC.SuppressFinalize(this);
+            }
+    
+            protected virtual void Dispose(bool disposing)
+            {
+                if (_disposed)
+                    return;
+    
+                if (disposing)
+                {
+                    Stop();
+                    
+                    lock (_lock)
+                    {
+                        _capture?.Dispose();
+                        _capture = null;
+                    }
+                }
+    
+                _disposed = true;
+            }
+    
+            ~AudioCaptureService()
+            {
+                Dispose(false);
+            }
+        }
+    }
+    ]]></file>
+  <file path="Services\Rendering\Effects\SoftGlowEffect.cs"><![CDATA[
+    using System;
+    using System.Collections.Generic;
+    using System.Drawing;
+    using System.Linq;
+    using System.Windows.Forms;
+    using AmbientEffectsEngine.Models;
+    
+    namespace AmbientEffectsEngine.Services.Rendering.Effects
+    {
+        public class SoftGlowEffect : IEffect
+        {
+            private readonly List<Form> _effectForms = new List<Form>();
+            private bool _disposed = false;
+    
+            public string EffectId => "softglow";
+            public string Name => "Soft Glow";
+            public string Description => "Solid color ambient glow that responds to screen colors and audio intensity";
+    
+            public void Initialize(IEnumerable<DisplayMonitor> targetMonitors)
+            {
+                CleanupForms();
+    
+                foreach (var monitor in targetMonitors.Where(m => !m.IsPrimary))
+                {
+                    var screen = Screen.AllScreens.FirstOrDefault(s => s.DeviceName == monitor.Id);
+                    if (screen != null)
+                    {
+                        var form = CreateEffectForm(screen);
+                        _effectForms.Add(form);
+                    }
+                }
+            }
+    
+            public void UpdateEffect(ProcessedData data)
+            {
+                if (_disposed || data == null) return;
+    
+                var color = data.DominantColor;
+                var intensity = Math.Clamp(data.AudioIntensity, 0.0f, 1.0f);
+                
+                // Debug output
+                System.Diagnostics.Debug.WriteLine($"SoftGlow Update: Color=({color.R},{color.G},{color.B}), Intensity={intensity:F2}");
+                
+                // Apply intensity to the color brightness, but ensure minimum visibility
+                var minIntensity = 0.3f; // Always show at least 30% of the color
+                var effectiveIntensity = Math.Max(intensity, minIntensity);
+                
+                var adjustedColor = Color.FromArgb(
+                    (int)(color.R * effectiveIntensity),
+                    (int)(color.G * effectiveIntensity),
+                    (int)(color.B * effectiveIntensity)
+                );
+    
+                foreach (var form in _effectForms)
+                {
+                    if (form != null && !form.IsDisposed)
+                    {
+                        // Check if form handle is created before invoking
+                        if (form.IsHandleCreated)
+                        {
+                            form.Invoke(new Action(() =>
+                            {
+                                form.BackColor = adjustedColor;
+                            }));
+                        }
+                        else
+                        {
+                            // Directly set color if handle not created (safer for testing)
+                            form.BackColor = adjustedColor;
+                        }
+                    }
+                }
+            }
+    
+            public void Show()
+            {
+                foreach (var form in _effectForms.Where(f => f != null && !f.IsDisposed))
+                {
+                    form.Show();
+                    form.WindowState = FormWindowState.Maximized;
+                }
+            }
+    
+            public void Hide()
+            {
+                foreach (var form in _effectForms.Where(f => f != null && !f.IsDisposed))
+                {
+                    form.Hide();
+                }
+            }
+    
+            private Form CreateEffectForm(Screen screen)
+            {
+                var form = new Form
+                {
+                    FormBorderStyle = FormBorderStyle.None,
+                    WindowState = FormWindowState.Maximized,
+                    TopMost = true,
+                    BackColor = Color.Black,
+                    ShowInTaskbar = false,
+                    StartPosition = FormStartPosition.Manual
+                };
+    
+                // Position form on the target screen
+                form.Location = screen.Bounds.Location;
+                form.Size = screen.Bounds.Size;
+    
+                return form;
+            }
+    
+            private void CleanupForms()
+            {
+                foreach (var form in _effectForms.Where(f => f != null && !f.IsDisposed))
+                {
+                    form.Close();
+                    form.Dispose();
+                }
+                _effectForms.Clear();
+            }
+    
+            public void Dispose()
+            {
+                if (!_disposed)
+                {
+                    CleanupForms();
+                    _disposed = true;
+                }
+            }
+        }
+    }
+    ]]></file>
+  <file path="Services\Rendering\Effects\IEffect.cs"><![CDATA[
+    using System;
+    using System.Collections.Generic;
+    using AmbientEffectsEngine.Models;
+    
+    namespace AmbientEffectsEngine.Services.Rendering.Effects
+    {
+        /// <summary>
+        /// Interface for visual effects that can be rendered on secondary monitors.
+        /// This interface implements the Strategy pattern to allow different effect implementations.
+        /// </summary>
+        public interface IEffect : IDisposable
+        {
+            /// <summary>
+            /// Gets the unique identifier for this effect type.
+            /// </summary>
+            string EffectId { get; }
+    
+            /// <summary>
+            /// Gets the display name for this effect type.
+            /// </summary>
+            string Name { get; }
+    
+            /// <summary>
+            /// Gets the description for this effect type.
+            /// </summary>
+            string Description { get; }
+    
+            /// <summary>
+            /// Initializes the effect with the target monitors where it should be rendered.
+            /// This method should create and configure all necessary UI elements.
+            /// </summary>
+            /// <param name="targetMonitors">The monitors where the effect should be displayed (excluding primary)</param>
+            void Initialize(IEnumerable<DisplayMonitor> targetMonitors);
+    
+            /// <summary>
+            /// Updates the effect with new processed data from the data processing service.
+            /// This method is called in real-time as new audio and color data becomes available.
+            /// </summary>
+            /// <param name="data">The processed data containing dominant color and audio intensity</param>
+            void UpdateEffect(ProcessedData data);
+    
+            /// <summary>
+            /// Shows the effect on all target monitors.
+            /// </summary>
+            void Show();
+    
+            /// <summary>
+            /// Hides the effect on all target monitors without disposing resources.
+            /// </summary>
+            void Hide();
+        }
+    }
+    ]]></file>
+  <file path="Services\Rendering\Effects\GenerativeVisualizerEffect.cs"><![CDATA[
+    using System;
+    using System.Collections.Generic;
+    using System.Drawing;
+    using System.Drawing.Drawing2D;
+    using System.Linq;
+    using System.Windows.Forms;
+    using AmbientEffectsEngine.Models;
+    
+    namespace AmbientEffectsEngine.Services.Rendering.Effects
+    {
+        public class GenerativeVisualizerEffect : IEffect
+        {
+            private readonly List<VisualizerForm> _effectForms = new List<VisualizerForm>();
+            private readonly List<Particle> _particles = new List<Particle>();
+            private readonly object _particleLock = new object();
+            private readonly Random _random = new Random();
+            private readonly System.Windows.Forms.Timer _animationTimer = new System.Windows.Forms.Timer();
+            private bool _disposed = false;
+    
+            private Color _currentDominantColor = Color.Blue;
+            private float _currentAudioIntensity = 0.0f;
+            private long _frameCount = 0;
+    
+            public string EffectId => "generativevisualizer";
+            public string Name => "Generative Visualizer";
+            public string Description => "Dynamic particle-based visualization that responds to audio intensity and screen colors";
+    
+            public GenerativeVisualizerEffect()
+            {
+                _animationTimer.Interval = 16; // ~60 FPS (1000ms/60 ≈ 16ms)
+                _animationTimer.Tick += OnAnimationTick;
+            }
+    
+            public void Initialize(IEnumerable<DisplayMonitor> targetMonitors)
+            {
+                CleanupForms();
+                InitializeParticles();
+    
+                if (targetMonitors == null) return;
+    
+                foreach (var monitor in targetMonitors.Where(m => !m.IsPrimary))
+                {
+                    var screen = Screen.AllScreens.FirstOrDefault(s => s.DeviceName == monitor.Id);
+                    if (screen != null)
+                    {
+                        var form = CreateVisualizerForm(screen);
+                        _effectForms.Add(form);
+                    }
+                }
+    
+                _animationTimer.Start();
+            }
+    
+            public void UpdateEffect(ProcessedData data)
+            {
+                if (_disposed || data == null) return;
+    
+                _currentDominantColor = data.DominantColor;
+                _currentAudioIntensity = Math.Clamp(data.AudioIntensity, 0.0f, 1.0f);
+                
+                // Debug output
+                System.Diagnostics.Debug.WriteLine($"GenerativeVisualizer Update: Color=({data.DominantColor.R},{data.DominantColor.G},{data.DominantColor.B}), Intensity={_currentAudioIntensity:F2}");
+                
+                // Update particle behavior based on audio intensity
+                UpdateParticles();
+            }
+    
+            public void Show()
+            {
+                foreach (var form in _effectForms.Where(f => f != null && !f.IsDisposed))
+                {
+                    form.Show();
+                    form.WindowState = FormWindowState.Maximized;
+                }
+            }
+    
+            public void Hide()
+            {
+                foreach (var form in _effectForms.Where(f => f != null && !f.IsDisposed))
+                {
+                    form.Hide();
+                }
+            }
+    
+            private void InitializeParticles()
+            {
+                lock (_particleLock)
+                {
+                    _particles.Clear();
+                    
+                    // Use actual screen bounds instead of hardcoded values
+                    var screenBounds = _effectForms.FirstOrDefault()?.Bounds ?? new Rectangle(0, 0, 1920, 1080);
+                    
+                    // Create initial particle set
+                    for (int i = 0; i < 100; i++)
+                    {
+                        _particles.Add(new Particle
+                        {
+                            X = _random.Next(0, screenBounds.Width),
+                            Y = _random.Next(0, screenBounds.Height),
+                            VelocityX = (float)(_random.NextDouble() * 4 - 2),
+                            VelocityY = (float)(_random.NextDouble() * 4 - 2),
+                            Size = (float)(_random.NextDouble() * 8 + 2),
+                            Life = 1.0f,
+                            MaxLife = (float)(_random.NextDouble() * 5 + 2)
+                        });
+                    }
+                }
+            }
+    
+            private void UpdateParticles()
+            {
+                lock (_particleLock)
+                {
+                    var speedMultiplier = 1.0f + (_currentAudioIntensity * 3.0f); // Speed increases with audio
+                    var spawnRate = (int)(_currentAudioIntensity * 10); // Spawn more particles with audio
+    
+                    // Update existing particles
+                    for (int i = _particles.Count - 1; i >= 0; i--)
+                    {
+                        var particle = _particles[i];
+                        
+                        // Update position with speed multiplier
+                        particle.X += particle.VelocityX * speedMultiplier;
+                        particle.Y += particle.VelocityY * speedMultiplier;
+                        
+                        // Update life (slower decay for longer visibility)
+                        particle.Life -= 0.005f; // Slower decay than 60 FPS rate
+                        
+                        // Remove dead particles
+                        if (particle.Life <= 0)
+                        {
+                            _particles.RemoveAt(i);
+                        }
+                    }
+    
+                    // Spawn new particles based on audio intensity
+                    var screenBounds = _effectForms.FirstOrDefault()?.Bounds ?? new Rectangle(0, 0, 1920, 1080);
+                    for (int i = 0; i < spawnRate; i++)
+                    {
+                        if (_particles.Count < 500) // Limit total particles for performance
+                        {
+                            _particles.Add(new Particle
+                            {
+                                X = _random.Next(0, screenBounds.Width),
+                                Y = _random.Next(0, screenBounds.Height),
+                                VelocityX = (float)(_random.NextDouble() * 6 - 3),
+                                VelocityY = (float)(_random.NextDouble() * 6 - 3),
+                                Size = (float)(_random.NextDouble() * 12 + 3),
+                                Life = 1.0f,
+                                MaxLife = (float)(_random.NextDouble() * 3 + 1)
+                            });
+                        }
+                    }
+                }
+            }
+    
+            private void OnAnimationTick(object sender, EventArgs e)
+            {
+                _frameCount++;
+                
+                foreach (var form in _effectForms.Where(f => f != null && !f.IsDisposed))
+                {
+                    if (form.IsHandleCreated)
+                    {
+                        try
+                        {
+                            form.Invoke(new Action(() => form.Invalidate()));
+                        }
+                        catch
+                        {
+                            // Ignore invoke errors during shutdown
+                        }
+                    }
+                }
+            }
+    
+            private VisualizerForm CreateVisualizerForm(Screen screen)
+            {
+                var form = new VisualizerForm(this)
+                {
+                    FormBorderStyle = FormBorderStyle.None,
+                    WindowState = FormWindowState.Maximized,
+                    TopMost = true,
+                    BackColor = Color.Black,
+                    ShowInTaskbar = false,
+                    StartPosition = FormStartPosition.Manual
+                };
+    
+                // Position form on the target screen
+                form.Location = screen.Bounds.Location;
+                form.Size = screen.Bounds.Size;
+    
+                return form;
+            }
+    
+            private void CleanupForms()
+            {
+                _animationTimer.Stop();
+                
+                foreach (var form in _effectForms.Where(f => f != null && !f.IsDisposed))
+                {
+                    form.Close();
+                    form.Dispose();
+                }
+                _effectForms.Clear();
+            }
+    
+            public void Dispose()
+            {
+                if (!_disposed)
+                {
+                    CleanupForms();
+                    _animationTimer?.Dispose();
+                    _disposed = true;
+                }
+            }
+    
+            // Internal methods for the custom form to access
+            internal void RenderParticles(Graphics graphics, Rectangle bounds)
+            {
+                if (_disposed) return;
+    
+                // Create a safe copy of particles to avoid collection modification issues
+                List<Particle> particlesCopy;
+                lock (_particleLock)
+                {
+                    particlesCopy = new List<Particle>(_particles);
+                }
+    
+                using (var brush = new SolidBrush(_currentDominantColor))
+                {
+                    foreach (var particle in particlesCopy)
+                    {
+                        // Ensure particle is within bounds
+                        if (particle.X >= 0 && particle.X < bounds.Width && 
+                            particle.Y >= 0 && particle.Y < bounds.Height)
+                        {
+                            // Ensure minimum visibility with better alpha calculation
+                            var normalizedLife = Math.Clamp(particle.Life / particle.MaxLife, 0.0f, 1.0f);
+                            var alpha = (int)(Math.Max(normalizedLife, 0.3f) * 255); // Minimum 30% alpha
+                            var color = Color.FromArgb(alpha, _currentDominantColor.R, _currentDominantColor.G, _currentDominantColor.B);
+                            
+                            using (var particleBrush = new SolidBrush(color))
+                            {
+                                var size = particle.Size * (particle.Life / particle.MaxLife);
+                                graphics.FillEllipse(particleBrush, particle.X - size/2, particle.Y - size/2, size, size);
+                            }
+                        }
+                    }
+                }
+    
+                // Add some connecting lines for extra visual complexity
+                if (_currentAudioIntensity > 0.3f)
+                {
+                    using (var pen = new Pen(Color.FromArgb(50, _currentDominantColor), 1))
+                    {
+                        var nearbyParticles = particlesCopy.Where(p => p.Life > 0.5f).Take(50).ToList();
+                        for (int i = 0; i < nearbyParticles.Count - 1; i++)
+                        {
+                            for (int j = i + 1; j < Math.Min(i + 5, nearbyParticles.Count); j++)
+                            {
+                                var p1 = nearbyParticles[i];
+                                var p2 = nearbyParticles[j];
+                                var distance = Math.Sqrt(Math.Pow(p1.X - p2.X, 2) + Math.Pow(p1.Y - p2.Y, 2));
+                                
+                                if (distance < 100)
+                                {
+                                    graphics.DrawLine(pen, p1.X, p1.Y, p2.X, p2.Y);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    
+        // Custom form for rendering the visualizer
+        internal class VisualizerForm : Form
+        {
+            private readonly GenerativeVisualizerEffect _effect;
+    
+            public VisualizerForm(GenerativeVisualizerEffect effect)
+            {
+                _effect = effect;
+                SetStyle(ControlStyles.AllPaintingInWmPaint | 
+                         ControlStyles.UserPaint | 
+                         ControlStyles.DoubleBuffer | 
+                         ControlStyles.ResizeRedraw, true);
+            }
+    
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                e.Graphics.Clear(Color.Black);
+                _effect.RenderParticles(e.Graphics, ClientRectangle);
+            }
+        }
+    
+        // Particle data structure
+        internal class Particle
+        {
+            public float X { get; set; }
+            public float Y { get; set; }
+            public float VelocityX { get; set; }
+            public float VelocityY { get; set; }
+            public float Size { get; set; }
+            public float Life { get; set; }
+            public float MaxLife { get; set; }
+        }
+    }
+    ]]></file>
+</files>

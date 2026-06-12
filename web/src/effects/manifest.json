@@ -1,0 +1,29 @@
+{
+  "effects": [
+    {
+      "id": "edge-glow",
+      "name": "Edge Glow",
+      "description": "Ambilight-style glow that mirrors the source monitor's edge colors onto adjacent displays."
+    },
+    {
+      "id": "plasma",
+      "name": "Plasma Flow",
+      "description": "Slow-breathing plasma clouds tinted by the screen palette and stirred by the music."
+    },
+    {
+      "id": "audio-bars",
+      "name": "Spectrum Bars",
+      "description": "A glowing frequency spectrum with reflections, colored by what's on screen."
+    },
+    {
+      "id": "particles",
+      "name": "Particle Field",
+      "description": "Thousands of GPU particles drifting through screen colors and pulsing with the beat."
+    },
+    {
+      "id": "aurora",
+      "name": "Aurora",
+      "description": "Northern-lights ribbons that ripple with bass and take their colors from the screen edges."
+    }
+  ]
+}

@@ -8,6 +8,7 @@ This document outlines the overall project architecture for the Ambient Effects 
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
 | 2025-07-19 | 1.0 | Initial Architecture Design | Winston (Architect) |
+| 2025-07-30 | 1.1 | Added Epic 4 PoC Integration Architecture | Winston (Architect) |
 
 ---
 ## Starter Template or Existing Project
@@ -225,8 +226,64 @@ Automation: All tests will be run automatically by the GitHub Actions pipeline o
 ## Checklist Results Report
 I have validated this architecture against the standard Architect's Checklist. The design is robust, complete, and directly addresses the requirements of the PRD and UI/UX Specification. The architecture is approved and ready for development.
 
+## Epic 4: Unreal Engine 5 PoC Integration
+
+**Overview**
+Epic 4 introduces a Proof of Concept for integrating Unreal Engine 5 visual effects with the existing C#/WPF application. This is implemented as a hybrid architecture where the C# application continues to handle capture and the UE5 application provides advanced visual effects rendering.
+
+**Integration Architecture**
+The PoC uses Inter-Process Communication (IPC) to bridge the C# capture application with a separate Unreal Engine 5 process:
+
+```mermaid
+graph TD
+    subgraph "C# Application (Existing)"
+        A[Screen Capture Service] --> B[Spout/NDI Sender]
+        C[Audio Capture Service] --> D[IPC Audio Sender]
+    end
+    
+    subgraph "IPC Layer"
+        B --> E[Spout/NDI Stream]
+        D --> F[Named Pipe/Shared Memory]
+    end
+    
+    subgraph "Unreal Engine 5 (New)"
+        E --> G[Media Texture Receiver]
+        F --> H[Audio Data Receiver]
+        G --> I[Niagara Particle System]
+        H --> I
+        I --> J[UE5 Viewport/Display]
+    end
+```
+
+**Key Architectural Decisions for PoC:**
+
+1. **Process Isolation**: UE5 runs as a separate process to maintain stability and allow independent development
+2. **Video Transport**: Spout or NDI for low-latency video streaming between processes
+3. **Audio Transport**: Named pipes or shared memory for audio intensity/frequency data
+4. **Fallback Support**: Original C# renderer remains available if UE5 process fails
+5. **Feature Toggle**: Configuration flag to enable/disable UE5 integration
+
+**New Components for PoC:**
+
+- **SpoutSender/NDISender**: C# component to stream captured frames via Spout/NDI
+- **AudioIPCSender**: C# component to send audio analysis data to UE5
+- **UE5EffectsHost**: Separate Unreal Engine 5 application for visual effects
+- **MediaTextureReceiver**: UE5 component to receive video stream
+- **NiagaraController**: UE5 component to drive particle effects based on input data
+
+**Performance Considerations:**
+- Target: <10% additional overhead vs native C# rendering
+- IPC latency: Expected 5-10ms for video streaming
+- Audio sync: Timestamp-based synchronization between processes
+
+**PoC Scope Limitations:**
+- No bidirectional communication (UE5 doesn't control C# app)
+- Basic error handling only
+- Single display output from UE5
+- Limited to purchased marketplace Niagara effects
+
 ## Next Steps
-The planning and design phase is now complete. This Architecture Document, along with the PRD and UI/UX Specification, provides a comprehensive blueprint for implementation. The project is ready to move into the development phase, starting with the stories outlined in Epic 1.
+The planning and design phase is now complete. This Architecture Document, along with the PRD and UI/UX Specification, provides a comprehensive blueprint for implementation. The project is ready to move into the development phase, starting with the stories outlined in Epic 1. Epic 4 represents an experimental branch that can be developed in parallel without affecting the core application stability.
 
 
 

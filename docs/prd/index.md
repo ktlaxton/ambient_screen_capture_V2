@@ -10,3 +10,4 @@
 - [Epic 1: Foundation & Core Services](./epic-1-foundation-and-core-services.md)
 - [Epic 2: The Ambient Effects Engine](./epic-2-the-ambient-effects-engine.md)
 - [Epic 3: User Customization & Settings](./epic-3-user-customization-and-settings.md)
+- [Epic 4: Real-Time Reactive Visuals PoC](./epic-4-real-time-reactive-visuals-poc.md)

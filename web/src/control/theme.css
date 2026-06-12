@@ -1,0 +1,228 @@
+/* ============================================================================
+   AmbientFx control UI — design tokens + base styles (dark gamer theme).
+   ========================================================================== */
+
+:root {
+  --bg: #0a0c12;
+  --panel: rgba(255, 255, 255, 0.035);
+  --panel-hover: rgba(255, 255, 255, 0.055);
+  --panel-border: rgba(255, 255, 255, 0.07);
+  --panel-border-strong: rgba(255, 255, 255, 0.12);
+  --text: #e8ebf2;
+  --text-dim: #8b93a7;
+  --text-faint: #5b6275;
+  --accent-a: #22d3ee;
+  --accent-b: #8b5cf6;
+  --accent-grad: linear-gradient(135deg, #22d3ee, #8b5cf6);
+  --accent-a-soft: rgba(34, 211, 238, 0.35);
+  --accent-b-soft: rgba(139, 92, 246, 0.35);
+  --danger: #f4516a;
+  --warn: #f5b94e;
+  --info: #22d3ee;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --t-fast: 150ms var(--ease);
+  --t-med: 200ms var(--ease);
+  --titlebar-h: 40px;
+  --font:
+    'Segoe UI Variable Display', 'Segoe UI', system-ui, -apple-system,
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.45;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+#root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+::selection {
+  background: rgba(34, 211, 238, 0.3);
+}
+
+/* Slim custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------- cards -- */
+
+.card {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px 20px;
+  transition: border-color var(--t-fast);
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 14px;
+}
+
+.card-title .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--accent-grad);
+  box-shadow: 0 0 8px var(--accent-a-soft);
+  flex: none;
+}
+
+.card-title .spacer {
+  flex: 1;
+}
+
+.hint {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.hint-faint {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+/* ------------------------------------------------------- empty / loading -- */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 36px 20px;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.empty-state .glyph {
+  font-size: 26px;
+  opacity: 0.6;
+}
+
+.boot-screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+}
+
+.boot-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--accent-grad);
+  box-shadow:
+    0 0 32px var(--accent-a-soft),
+    0 0 64px var(--accent-b-soft);
+  animation: boot-pulse 1.6s var(--ease) infinite;
+}
+
+@keyframes boot-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.92);
+    opacity: 0.8;
+  }
+}
+
+.boot-shimmer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 260px;
+}
+
+.boot-shimmer i {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0.04) 30%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.04) 70%
+  );
+  background-size: 220% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+.boot-shimmer i:nth-child(2) {
+  width: 75%;
+}
+.boot-shimmer i:nth-child(3) {
+  width: 50%;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 130% 0;
+  }
+  to {
+    background-position: -90% 0;
+  }
+}
+
+/* gradient text helper */
+.grad-text {
+  background: var(--accent-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
