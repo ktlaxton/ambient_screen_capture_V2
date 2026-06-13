@@ -84,6 +84,18 @@ Step 'dotnet publish (Release, win-x64, self-contained)' {
 if (-not (Test-Path (Join-Path $publishDir 'AmbientFx.exe'))) { throw 'Publish output missing AmbientFx.exe' }
 if (-not (Test-Path (Join-Path $publishDir 'wwwroot/control.html'))) { throw 'Publish output missing wwwroot (web assets)' }
 
+# RGB peripherals (Epic 8 / Story 8.4): native SDK + LGPL compliance files must ship,
+# and the LGPL'd RGB.NET assemblies must remain separate, replaceable files (§6).
+@(
+    'x64/iCUESDK.x64_2019.dll',     # Corsair iCUE SDK native client (8.1)
+    'RGB.NET.Core.dll',             # LGPL-2.1 assemblies — never trim/embed these
+    'RGB.NET.Devices.Corsair.dll',
+    'THIRD-PARTY-NOTICES.md',       # LGPL notice (8.4 AC1)
+    'licenses/LGPL-2.1.txt'         # full license text (8.4 AC1)
+) | ForEach-Object {
+    if (-not (Test-Path (Join-Path $publishDir $_))) { throw "Publish output missing $_ (Story 8.4 packaging guard)" }
+}
+
 # 3. Velopack pack ----------------------------------------------------------
 Step 'vpk pack (installer + update packages)' {
     $vpkArgs = @(

@@ -137,6 +137,56 @@ public sealed class SettingsNormalizationTests : IDisposable
     }
 
     [Fact]
+    public async Task Pre_epic8_settings_survive_an_update_round_trip()
+    {
+        // Story 8.4 AC4: a Velopack update from a pre-8.x build hands the new version the
+        // old settings.json. Every 7.x value must survive, every 8.x field must default,
+        // and a save → load cycle (what the app does immediately) must be stable.
+        var service = NewService();
+        var loaded = await LoadFromJson(
+            """
+            {
+              "isEnabled": true,
+              "sourceMonitorId": "\\\\.\\DISPLAY1",
+              "targetMonitorIds": ["\\\\.\\DISPLAY2"],
+              "activeEffectId": "plasma",
+              "brightness": 0.7,
+              "maxFps": 120,
+              "hotkeys": { "toggleEnabled": "Ctrl+Alt+A" },
+              "closeAction": "minimizeToTray",
+              "updateFeedUrl": "https://example.test/feed"
+            }
+            """);
+
+        // 7.x values intact.
+        Assert.True(loaded.IsEnabled);
+        Assert.Equal(@"\\.\DISPLAY1", loaded.SourceMonitorId);
+        Assert.Equal("plasma", loaded.ActiveEffectId);
+        Assert.Equal(0.7f, loaded.Brightness);
+        Assert.Equal(120, loaded.MaxFps);
+        Assert.Equal("Ctrl+Alt+A", loaded.Hotkeys["toggleEnabled"]);
+        Assert.Equal("minimizeToTray", loaded.CloseAction);
+        Assert.Equal("https://example.test/feed", loaded.UpdateFeedUrl);
+
+        // 8.x fields defaulted (feature dormant until opted in).
+        Assert.False(loaded.AmbientDevicesEnabled);
+        Assert.Equal(1f, loaded.PeripheralBrightness);
+        Assert.Empty(loaded.DevicePlacements);
+        Assert.Equal(new[] { "corsair" }, loaded.RgbProviders);
+        Assert.False(loaded.AudioReactiveDevices);
+        Assert.Equal(0.5f, loaded.AudioReactiveDepth);
+
+        // The app saves on first run after an update — the cycle must be lossless.
+        await service.SaveAsync(loaded);
+        var reloaded = await service.LoadAsync();
+        Assert.Equal(loaded.SourceMonitorId, reloaded.SourceMonitorId);
+        Assert.Equal(loaded.ActiveEffectId, reloaded.ActiveEffectId);
+        Assert.Equal(loaded.UpdateFeedUrl, reloaded.UpdateFeedUrl);
+        Assert.Equal(new[] { "corsair" }, reloaded.RgbProviders);
+        Assert.False(reloaded.AmbientDevicesEnabled);
+    }
+
+    [Fact]
     public async Task Null_entries_in_target_monitor_ids_are_dropped()
     {
         var s = await LoadFromJson("""{"targetMonitorIds":[null,"","\\\\?\\DISPLAY#X"]}""");

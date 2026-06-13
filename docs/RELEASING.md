@@ -68,6 +68,25 @@ dotnet tool install -g vpk          # Velopack CLI (build.ps1 installs it automa
 - **Never commit the certificate or its password.** Keep them outside the repo and pass them
   on the command line or via CI secrets.
 
+## RGB peripherals: native deps + LGPL notice (Epic 8 / Story 8.4)
+
+The release carries the ambient-RGB-peripheral feature's dependencies; `build.ps1` hard-fails
+if any of them are missing from the publish output:
+
+- **`x64/iCUESDK.x64_2019.dll`** — the Corsair iCUE SDK native client (official redist,
+  checked in at `src/Engine/native/x64/`). This is the only native we bundle. The other
+  vendor providers (Logitech/Razer/ASUS/MSI/SteelSeries/Wooting, Story 8.3) rely on the
+  vendor's own software being installed on the user's machine and are **off by default**.
+- **`RGB.NET.*.dll`** — LGPL-2.1 assemblies. They must remain **separate, replaceable files**:
+  never enable `PublishSingleFile`/`PublishTrimmed`/ILMerge for the engine, or the LGPL
+  relink obligation breaks (see `THIRD-PARTY-NOTICES.md` for the user-facing replace path).
+- **`THIRD-PARTY-NOTICES.md` + `licenses/LGPL-2.1.txt`** — the license notice and full text
+  ship inside the app directory; both are copied by the csproj, not by hand.
+
+Clean-machine behavior: a machine with no iCUE and no RGB software installs and runs fine —
+the feature is off by default, and enabling it shows the normal "iCUE not found" state
+(verify on a clean VM per Story 8.4 AC7 before a public release).
+
 ## Notes / gotchas
 
 - **Autostart** uses `Environment.ProcessPath` and Velopack's stable

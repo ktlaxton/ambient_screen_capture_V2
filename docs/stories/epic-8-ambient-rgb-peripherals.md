@@ -1,9 +1,10 @@
 # Epic 8: Ambient RGB Peripheral Output
 
 ## Status
-In progress — 8.1, 8.2 and 8.3 Done (owner-verified 2026-06-12; 8.3's non-Corsair
-hardware check stays open until such gear is available). 8.4 (installer & licensing
-hardening) drafted, not started — gated on the Story 7.4 installer.
+Near-complete — 8.1, 8.2 and 8.3 Done (owner-verified 2026-06-12; 8.3's non-Corsair
+hardware check stays open until such gear is available). 8.4 engineering complete
+2026-06-12 (Ready for Review); remaining owner items: LGPL go/no-go sign-off and the
+clean-VM + hardware pass with a packaged build (signed once the 7.4 cert exists).
 
 ## Context
 Through Epic 7 the app is a complete on-screen Ambilight: it captures the source monitor, computes

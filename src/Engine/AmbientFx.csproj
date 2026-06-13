@@ -25,6 +25,10 @@
     <!-- Corsair iCUE SDK v4 native client (redist from CorsairOfficial/cue-sdk v4.0.84).
          RGB.NET's Corsair provider probes x64\iCUESDK.x64_2019.dll relative to the app. -->
     <None Include="native\x64\iCUESDK.x64_2019.dll" TargetPath="x64\iCUESDK.x64_2019.dll" CopyToOutputDirectory="PreserveNewest" />
+    <!-- LGPL-2.1 obligations (Story 8.4): the license text and third-party notices ship
+         with every build so the installed app carries them (see THIRD-PARTY-NOTICES.md). -->
+    <None Include="licenses\**" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\THIRD-PARTY-NOTICES.md" TargetPath="THIRD-PARTY-NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
