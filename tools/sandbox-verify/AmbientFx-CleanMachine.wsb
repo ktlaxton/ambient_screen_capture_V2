@@ -1,0 +1,21 @@
+<Configuration>
+  <!-- Story 8.4 AC7: double-click this file (requires the "Windows Sandbox" optional
+       feature) to run the clean-machine verification: a throwaway Windows with no iCUE
+       and no RGB software installs the built release and checks the dormant path.
+       Results: tools\sandbox-verify\results\verify-report.txt -->
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>C:\Users\ktlax\Projects\ambeint_screen_capture_V2\build\releases</HostFolder>
+      <SandboxFolder>C:\AmbientFxVerify\releases</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>C:\Users\ktlax\Projects\ambeint_screen_capture_V2\tools\sandbox-verify</HostFolder>
+      <SandboxFolder>C:\AmbientFxVerify</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <LogonCommand>
+    <Command>powershell -ExecutionPolicy Bypass -File C:\AmbientFxVerify\verify.ps1</Command>
+  </LogonCommand>
+</Configuration>
