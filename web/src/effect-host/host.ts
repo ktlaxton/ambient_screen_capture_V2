@@ -62,6 +62,10 @@ export class EffectHost {
       prev !== null &&
       (prev.relation !== cfg.relation ||
         prev.source?.id !== cfg.source?.id ||
+        prev.source?.x !== cfg.source?.x ||
+        prev.source?.y !== cfg.source?.y ||
+        prev.source?.width !== cfg.source?.width ||
+        prev.source?.height !== cfg.source?.height ||
         prev.monitor?.x !== cfg.monitor?.x ||
         prev.monitor?.y !== cfg.monitor?.y ||
         prev.monitor?.width !== cfg.monitor?.width ||

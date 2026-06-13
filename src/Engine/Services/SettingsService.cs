@@ -162,6 +162,14 @@ public sealed class SettingsService : ISettingsService
         Presets = new List<Preset>(),
         ActivePresetName = string.Empty,
         FirstRunCompleted = false,
+        CloseAction = CloseActions.Ask,
+        UpdateFeedUrl = string.Empty,
+        AmbientDevicesEnabled = false,
+        PeripheralBrightness = 1.0f,
+        DevicePlacements = new Dictionary<string, DevicePlacement>(),
+        RgbProviders = new List<string> { "corsair" },
+        AudioReactiveDevices = false,
+        AudioReactiveDepth = 0.5f,
     };
 
     /// <summary>Reads + deserializes one candidate file; returns null on any failure (never throws).</summary>
@@ -201,11 +209,38 @@ public sealed class SettingsService : ISettingsService
         settings.EffectParamsById ??= new Dictionary<string, Dictionary<string, JsonElement>>();
         settings.Hotkeys ??= new Dictionary<string, string>();
         settings.ActivePresetName ??= string.Empty;
+        settings.CloseAction = CloseActions.IsValid(settings.CloseAction)
+            ? settings.CloseAction : CloseActions.Ask;
+        settings.UpdateFeedUrl ??= string.Empty;
 
         settings.AudioSensitivity = ClampUnit(settings.AudioSensitivity, 0.5f);
         settings.GlobalIntensity = ClampUnit(settings.GlobalIntensity, 1.0f);
         settings.Smoothing = ClampUnit(settings.Smoothing, 0.5f);
         settings.Brightness = ClampUnit(settings.Brightness, 0.85f);
+        settings.PeripheralBrightness = ClampUnit(settings.PeripheralBrightness, 1.0f);
+
+        // Device placements (Story 8.2): drop null/blank entries, repair anchors and
+        // brightness, and bound the map so a corrupt file can't grow it without limit.
+        var placements = new Dictionary<string, DevicePlacement>();
+        foreach (var (key, value) in settings.DevicePlacements ?? new Dictionary<string, DevicePlacement>())
+        {
+            if (string.IsNullOrWhiteSpace(key) || value is null || placements.Count >= 128) continue;
+            value.Anchor = DeviceAnchors.IsValid(value.Anchor) ? value.Anchor : DeviceAnchors.Auto;
+            value.Brightness = ClampUnit(value.Brightness, 1.0f);
+            placements[key] = value;
+        }
+        settings.DevicePlacements = placements;
+
+        // Vendor providers (Story 8.3): a missing key means a pre-8.3 file → Corsair default;
+        // an explicitly empty list is a valid "no providers" choice and is kept.
+        settings.RgbProviders = settings.RgbProviders is null
+            ? new List<string> { "corsair" }
+            : settings.RgbProviders
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Distinct()
+                .Take(16)
+                .ToList();
+        settings.AudioReactiveDepth = ClampUnit(settings.AudioReactiveDepth, 0.5f);
         settings.MaxFps = settings.MaxFps is >= 1 and <= 240 ? settings.MaxFps : 60;
         settings.ZonesPerEdge = Math.Clamp(settings.ZonesPerEdge, 1, 64);
         settings.AudioBands = Math.Clamp(settings.AudioBands, 1, 64);

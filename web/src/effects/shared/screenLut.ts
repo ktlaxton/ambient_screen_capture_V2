@@ -1,10 +1,13 @@
-// Palette plumbing for Plasma Flow: gradient stops sampled from the frame's
+// Screen-palette LUT plumbing (moved from plasma/palette.ts in Story 7.2 so
+// every LUT-driven effect shares it): gradient stops sampled from the frame's
 // perimeter edge colors (near edge -> left stops, top/bottom -> middle stops,
 // far edge -> right stops, dominant anchored at the midpoint), baked into a
 // 256x1 RGBA LUT. Stops are eased on the CPU between frames so the gradient
-// morphs smoothly instead of popping.
+// morphs smoothly instead of popping. Fixed-palette mode fills the same stop
+// buffer from a named palette instead (stopsFromPalette).
 import * as THREE from 'three';
 import type { EdgeColors, RGB } from '../../shared/bridge';
+import { samplePalette } from './palettes';
 
 export const STOP_COUNT = 7;
 /** Fixed LUT positions of the 7 stops; dominant anchors the midpoint (0.5). */
@@ -81,6 +84,30 @@ export function computeStops(
   // Stop 6: far edge slightly lifted — gives the LUT's bright end some bloom headroom.
   const c6 = sampleEdge(far, 0.75);
   writeStop(out, 6, c6[0] * 1.18, c6[1] * 1.18, c6[2] * 1.18);
+}
+
+/**
+ * Fixed-palette stops (Story 7.2): same buffer shape as computeStops, but fed
+ * from a named palette. The dark/bright anchoring mirrors the screen path so
+ * shaders tuned against it look right in either color-source mode.
+ */
+export function stopsFromPalette(paletteId: string, out: Float32Array): void {
+  for (let i = 0; i < STOP_COUNT; i++) {
+    const [r, g, b] = samplePalette(paletteId, i / (STOP_COUNT - 1));
+    if (i === 0) {
+      writeStop(
+        out,
+        0,
+        SHADOW_RGB[0] + (r - SHADOW_RGB[0]) * 0.35,
+        SHADOW_RGB[1] + (g - SHADOW_RGB[1]) * 0.35,
+        SHADOW_RGB[2] + (b - SHADOW_RGB[2]) * 0.35,
+      );
+    } else if (i === STOP_COUNT - 1) {
+      writeStop(out, i, r * 1.18, g * 1.18, b * 1.18);
+    } else {
+      writeStop(out, i, r, g, b);
+    }
+  }
 }
 
 /** Moody indigo/violet seed palette shown before the first engine frame arrives. */

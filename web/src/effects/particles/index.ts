@@ -12,9 +12,20 @@ import type {
   EffectModule,
   GlobalRenderSettings,
 } from '../types';
+import { paletteStops, readPaletteId, samplePalette } from '../shared/palettes';
+import { clamp, easeFactor, readNumber, readBoolean } from '../shared/params';
+import { applyBlendMode, readBlendMode, BLEND_OPTIONS, type BlendMode } from '../shared/blend';
 import { BG_FRAGMENT, BG_VERTEX, POINTS_FRAGMENT, POINTS_VERTEX } from './shaders';
 
-const DEFAULTS = { density: 1, baseSize: 1, flow: 0.4, audioPunch: 0.6 } as const;
+const DEFAULTS = {
+  density: 1,
+  baseSize: 1,
+  flow: 0.4,
+  audioPunch: 0.6,
+  screenColors: true,
+  palette: 'cool',
+  blendMode: 'additive' as BlendMode,
+} as const;
 
 const FULL_COUNT = 12000;
 const PREVIEW_COUNT = 2500;
@@ -26,15 +37,6 @@ const BOUNDS_MARGIN = 1.18; // covers camera sway + the ±3° roll
 // All swirl frequencies are multiples of 0.01, so flow time can wrap at 200*PI
 // without any visible discontinuity (keeps sin() args small on long sessions).
 const FLOW_WRAP = 200 * Math.PI;
-
-const clamp = (x: number, lo: number, hi: number): number => (x < lo ? lo : x > hi ? hi : x);
-
-const easeFactor = (dt: number, tau: number): number => 1 - Math.exp(-dt / tau);
-
-function readNumber(params: EffectParams, key: string, fallback: number): number {
-  const v = params[key];
-  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
-}
 
 /** Resample a variable-length 0..1 band array into a fixed 16-slot array by fraction. */
 function resampleBands(src: number[], dst: Float32Array): void {
@@ -186,6 +188,11 @@ class ParticlesInstance implements EffectInstance {
   private flowCur: number = DEFAULTS.flow;
   private audioPunch: number = DEFAULTS.audioPunch;
 
+  // Color source + blending (Story 7.2).
+  private screenColors: boolean = DEFAULTS.screenColors;
+  private paletteId: string = DEFAULTS.palette;
+  private blendMode: BlendMode = DEFAULTS.blendMode;
+
   // Globals.
   private intensityTarget = 1;
   private intensityCur = 1;
@@ -321,15 +328,29 @@ class ParticlesInstance implements EffectInstance {
     }
   }
 
+  /** Fixed-palette mode: all 4 edge rows + dominant come from the named palette. */
+  private refreshFixedTargets(): void {
+    const row = paletteStops(this.paletteId, this.zones);
+    for (let r = 0; r < 4; r++) {
+      this.edgesTarget.set(row, r * this.zones * 3);
+    }
+    const [dr, dg, db] = samplePalette(this.paletteId, 0.5);
+    this.dominantTarget[0] = dr;
+    this.dominantTarget[1] = dg;
+    this.dominantTarget[2] = db;
+  }
+
   onFrame(frame: FramePayload): void {
-    this.ensureEdgeTexture(frame.edges.top.length || 8);
-    fillRowTarget(frame.edges.top, this.edgesTarget, 0, this.zones);
-    fillRowTarget(frame.edges.bottom, this.edgesTarget, 1, this.zones);
-    fillRowTarget(frame.edges.left, this.edgesTarget, 2, this.zones);
-    fillRowTarget(frame.edges.right, this.edgesTarget, 3, this.zones);
-    this.dominantTarget[0] = clamp(frame.dominant[0] / 255, 0, 1);
-    this.dominantTarget[1] = clamp(frame.dominant[1] / 255, 0, 1);
-    this.dominantTarget[2] = clamp(frame.dominant[2] / 255, 0, 1);
+    if (this.screenColors) {
+      this.ensureEdgeTexture(frame.edges.top.length || 8);
+      fillRowTarget(frame.edges.top, this.edgesTarget, 0, this.zones);
+      fillRowTarget(frame.edges.bottom, this.edgesTarget, 1, this.zones);
+      fillRowTarget(frame.edges.left, this.edgesTarget, 2, this.zones);
+      fillRowTarget(frame.edges.right, this.edgesTarget, 3, this.zones);
+      this.dominantTarget[0] = clamp(frame.dominant[0] / 255, 0, 1);
+      this.dominantTarget[1] = clamp(frame.dominant[1] / 255, 0, 1);
+      this.dominantTarget[2] = clamp(frame.dominant[2] / 255, 0, 1);
+    }
 
     resampleBands(frame.audio.bands, this.bandsTarget);
     this.audioIntensityTarget = clamp(frame.audio.intensity, 0, 1);
@@ -422,6 +443,19 @@ class ParticlesInstance implements EffectInstance {
     this.flowTarget = clamp(readNumber(params, 'flow', DEFAULTS.flow), 0, 1);
     this.audioPunch = clamp(readNumber(params, 'audioPunch', DEFAULTS.audioPunch), 0, 1);
 
+    const screen = readBoolean(params, 'screenColors', DEFAULTS.screenColors);
+    const palette = readPaletteId(params, 'palette', DEFAULTS.palette);
+    if (screen !== this.screenColors || palette !== this.paletteId) {
+      this.screenColors = screen;
+      this.paletteId = palette;
+      if (!screen) this.refreshFixedTargets();
+    }
+    const blend = readBlendMode(params, 'blendMode', DEFAULTS.blendMode);
+    if (blend !== this.blendMode) {
+      this.blendMode = blend;
+      applyBlendMode(this.pointsMaterial, blend);
+    }
+
     const count = this.desiredCount();
     if (count !== this.particleCount) {
       const old = this.points.geometry;
@@ -482,6 +516,9 @@ const particles: EffectModule = {
     { key: 'baseSize', label: 'Particle size', type: 'range', min: 0.5, max: 2, step: 0.05, default: DEFAULTS.baseSize },
     { key: 'flow', label: 'Flow', type: 'range', min: 0, max: 1, step: 0.01, default: DEFAULTS.flow },
     { key: 'audioPunch', label: 'Audio punch', type: 'range', min: 0, max: 1, step: 0.01, default: DEFAULTS.audioPunch },
+    { key: 'screenColors', label: 'Screen colors', type: 'toggle', default: DEFAULTS.screenColors },
+    { key: 'palette', label: 'Palette', type: 'palette', default: DEFAULTS.palette },
+    { key: 'blendMode', label: 'Blend mode', type: 'select', options: BLEND_OPTIONS, default: DEFAULTS.blendMode },
   ],
   create: (ctx: EffectContext): EffectInstance => new ParticlesInstance(ctx),
 };

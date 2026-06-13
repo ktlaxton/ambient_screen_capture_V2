@@ -134,6 +134,55 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(loaded.FirstRunCompleted);
     }
 
+    // Story 7.2 AC8: 'color'/'palette' params are plain strings inside the opaque
+    // bag — they must round-trip verbatim with no C# interpretation.
+    [Fact]
+    public async Task EffectParams_ColorAndPaletteStrings_RoundTripVerbatim()
+    {
+        var settings = new ApplicationSettings
+        {
+            EffectParamsById = new Dictionary<string, Dictionary<string, JsonElement>>
+            {
+                ["edge-glow"] = new()
+                {
+                    ["tintColor"] = JsonSerializer.SerializeToElement("#4f7cff"),
+                    ["palette"] = JsonSerializer.SerializeToElement("warm"),
+                    ["screenColors"] = JsonSerializer.SerializeToElement(false),
+                    ["tintStrength"] = JsonSerializer.SerializeToElement(0.4),
+                },
+            },
+        };
+        await CreateService().SaveAsync(settings);
+
+        var loaded = await CreateService().LoadAsync();
+
+        var bag = loaded.EffectParamsById["edge-glow"];
+        Assert.Equal("#4f7cff", bag["tintColor"].GetString());
+        Assert.Equal("warm", bag["palette"].GetString());
+        Assert.False(bag["screenColors"].GetBoolean());
+        Assert.Equal(0.4, bag["tintStrength"].GetDouble());
+    }
+
+    // Story 7.3 AC1: the close behavior persists; junk values normalize back to "ask"
+    // (so an old/hand-edited file can never wedge the close routing).
+    [Fact]
+    public async Task CloseAction_RoundTrips_AndNormalizesUnknownValues()
+    {
+        var service = CreateService();
+        var settings = service.GetDefaults();
+        Assert.Equal(CloseActions.Ask, settings.CloseAction);
+
+        settings.CloseAction = CloseActions.Quit;
+        await service.SaveAsync(settings);
+        Assert.Equal(CloseActions.Quit, (await CreateService().LoadAsync()).CloseAction);
+
+        File.WriteAllText(SettingsPath, """{ "closeAction": "explode" }""");
+        Assert.Equal(CloseActions.Ask, (await CreateService().LoadAsync()).CloseAction);
+
+        File.WriteAllText(SettingsPath, """{ "maxFps": 60 }"""); // old file, field absent
+        Assert.Equal(CloseActions.Ask, (await CreateService().LoadAsync()).CloseAction);
+    }
+
     // ---------------------------------------------------------------- defaults
 
     [Fact]

@@ -1,7 +1,12 @@
 // store.test.ts — unit tests for the control-UI zustand store (no React).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useControlStore } from './store';
-import type { ApplicationSettings, ConfigPayload, MonitorInfo } from '../shared/bridge';
+import type {
+  ApplicationSettings,
+  ConfigPayload,
+  DevicesPayload,
+  MonitorInfo,
+} from '../shared/bridge';
 
 function makeSettings(overrides: Partial<ApplicationSettings> = {}): ApplicationSettings {
   return {
@@ -23,6 +28,14 @@ function makeSettings(overrides: Partial<ApplicationSettings> = {}): Application
     presets: [],
     activePresetName: '',
     firstRunCompleted: true,
+    closeAction: 'ask',
+    updateFeedUrl: '',
+    ambientDevicesEnabled: false,
+    peripheralBrightness: 1,
+    devicePlacements: {},
+    rgbProviders: ['corsair'],
+    audioReactiveDevices: false,
+    audioReactiveDepth: 0.5,
     ...overrides,
   };
 }
@@ -47,6 +60,7 @@ beforeEach(() => {
     selectedEffectId: null,
     onboardingOpen: false,
     onboardingDecided: false,
+    devices: { connectionState: 'disabled', devices: [], providers: [] },
   });
 });
 
@@ -66,6 +80,30 @@ describe('initial state', () => {
     expect(s.selectedEffectId).toBeNull();
     expect(s.onboardingOpen).toBe(false);
     expect(s.onboardingDecided).toBe(false);
+    expect(s.devices).toEqual({ connectionState: 'disabled', devices: [], providers: [] });
+  });
+});
+
+describe('applyDevices', () => {
+  it('replaces the peripheral state wholesale (Story 8.1)', () => {
+    const payload: DevicesPayload = {
+      connectionState: 'connected',
+      devices: [{ id: '0:Kbd', name: 'Kbd', type: 'Keyboard', ledCount: 108 }],
+      providers: [{ key: 'corsair', name: 'Corsair iCUE', state: 'connected', deviceCount: 1 }],
+    };
+    useControlStore.getState().applyDevices(payload);
+    expect(useControlStore.getState().devices).toEqual(payload);
+
+    useControlStore.getState().applyDevices({
+      connectionState: 'icueNotFound',
+      devices: [],
+      providers: [],
+    });
+    expect(useControlStore.getState().devices).toEqual({
+      connectionState: 'icueNotFound',
+      devices: [],
+      providers: [],
+    });
   });
 });
 

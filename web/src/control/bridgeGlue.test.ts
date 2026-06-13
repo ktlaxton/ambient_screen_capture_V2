@@ -89,6 +89,14 @@ function makeSettings(overrides: Partial<ApplicationSettings> = {}): Application
     presets: [],
     activePresetName: '',
     firstRunCompleted: true,
+    closeAction: 'ask',
+    updateFeedUrl: '',
+    ambientDevicesEnabled: false,
+    peripheralBrightness: 1,
+    devicePlacements: {},
+    rgbProviders: ['corsair'],
+    audioReactiveDevices: false,
+    audioReactiveDepth: 0.5,
     ...overrides,
   };
 }
@@ -145,9 +153,33 @@ describe('initBridgeGlue', () => {
     expect(getState().connected).toBe(false);
   });
 
-  it('subscribes to config, monitors, status, and the frame feed', () => {
+  it('subscribes to config, monitors, status, closePrompt, devices, and the frame feed', () => {
     glue.initBridgeGlue();
-    expect([...mocks.handlers.keys()].sort()).toEqual(['config', 'frame', 'monitors', 'status']);
+    expect([...mocks.handlers.keys()].sort()).toEqual([
+      'closePrompt',
+      'config',
+      'devices',
+      'frame',
+      'monitors',
+      'status',
+    ]);
+  });
+
+  it('devices message updates the peripheral state (Story 8.1)', () => {
+    glue.initBridgeGlue();
+    const payload = {
+      connectionState: 'connected',
+      devices: [{ id: '0:Kbd', name: 'Kbd', type: 'Keyboard', ledCount: 108 }],
+    };
+    mocks.emit('devices', payload);
+    expect(getState().devices).toEqual(payload);
+  });
+
+  it('closePrompt message opens the close-choice modal (Story 7.3)', () => {
+    glue.initBridgeGlue();
+    expect(getState().closePromptOpen).toBe(false);
+    mocks.emit('closePrompt', {});
+    expect(getState().closePromptOpen).toBe(true);
   });
 
   it('is idempotent: a second call adds no subscriptions and sends nothing', () => {
@@ -386,6 +418,141 @@ describe('setGlobal', () => {
   });
 });
 
+describe('ambient peripherals (Story 8.1)', () => {
+  it('setAmbientDevicesEnabled patches optimistically and sends immediately', () => {
+    initWithConfig({ ambientDevicesEnabled: false });
+    glue.setAmbientDevicesEnabled(true);
+    expect(getState().settings?.ambientDevicesEnabled).toBe(true);
+    expect(mocks.bridge.send).toHaveBeenCalledWith('setDevices', { enabled: true });
+  });
+
+  it('setPeripheralBrightness patches immediately and debounces the send', () => {
+    initWithConfig({ peripheralBrightness: 1 });
+    glue.setPeripheralBrightness(0.4);
+    expect(getState().settings?.peripheralBrightness).toBe(0.4);
+    expect(mocks.bridge.send).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(120);
+    expect(mocks.bridge.send).toHaveBeenCalledWith('setDevices', { brightness: 0.4 });
+  });
+
+  it('rapid brightness changes collapse into one send with the last value', () => {
+    initWithConfig();
+    glue.setPeripheralBrightness(0.2);
+    glue.setPeripheralBrightness(0.7);
+    vi.advanceTimersByTime(120);
+    expect(mocks.bridge.send).toHaveBeenCalledTimes(1);
+    expect(mocks.bridge.send).toHaveBeenCalledWith('setDevices', { brightness: 0.7 });
+  });
+});
+
+describe('vendors + audio reactive (Story 8.3)', () => {
+  it('setRgbProviderEnabled adds a vendor and sends the full set', () => {
+    initWithConfig({ rgbProviders: ['corsair'] });
+    glue.setRgbProviderEnabled('razer', true);
+    expect(getState().settings?.rgbProviders).toEqual(['corsair', 'razer']);
+    expect(mocks.bridge.send).toHaveBeenCalledWith('setRgbProviders', {
+      providers: ['corsair', 'razer'],
+    });
+  });
+
+  it('setRgbProviderEnabled removes a vendor without duplicating others', () => {
+    initWithConfig({ rgbProviders: ['corsair', 'razer'] });
+    glue.setRgbProviderEnabled('corsair', false);
+    expect(getState().settings?.rgbProviders).toEqual(['razer']);
+    expect(mocks.bridge.send).toHaveBeenCalledWith('setRgbProviders', { providers: ['razer'] });
+  });
+
+  it('enabling an already-enabled vendor does not duplicate it', () => {
+    initWithConfig({ rgbProviders: ['corsair'] });
+    glue.setRgbProviderEnabled('corsair', true);
+    expect(getState().settings?.rgbProviders).toEqual(['corsair']);
+  });
+
+  it('setAudioReactiveDevices patches and sends immediately', () => {
+    initWithConfig({ audioReactiveDevices: false });
+    glue.setAudioReactiveDevices(true);
+    expect(getState().settings?.audioReactiveDevices).toBe(true);
+    expect(mocks.bridge.send).toHaveBeenCalledWith('setDevices', { audioReactive: true });
+  });
+
+  it('setAudioReactiveDepth debounces and does not collide with the brightness key', () => {
+    initWithConfig();
+    glue.setAudioReactiveDepth(0.8);
+    glue.setPeripheralBrightness(0.4);
+    expect(mocks.bridge.send).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(120);
+    expect(mocks.bridge.send).toHaveBeenCalledTimes(2);
+    expect(mocks.bridge.send).toHaveBeenCalledWith('setDevices', { audioDepth: 0.8 });
+    expect(mocks.bridge.send).toHaveBeenCalledWith('setDevices', { brightness: 0.4 });
+  });
+});
+
+describe('per-device placement (Story 8.2)', () => {
+  it('resolvedDevicePlacement merges stored values over the Auto defaults', () => {
+    initWithConfig({
+      devicePlacements: { 'corsair:K95': { anchor: 'left', flip: false, brightness: 1, enabled: true } },
+    });
+    expect(glue.resolvedDevicePlacement('corsair:K95').anchor).toBe('left');
+    expect(glue.resolvedDevicePlacement('corsair:unknown')).toEqual({
+      anchor: 'auto',
+      flip: false,
+      brightness: 1,
+      enabled: true,
+    });
+  });
+
+  it('discrete changes patch the store and send immediately', () => {
+    initWithConfig();
+    glue.setDevicePlacement('corsair:K95', { anchor: 'left' });
+    expect(getState().settings?.devicePlacements['corsair:K95']).toEqual({
+      anchor: 'left',
+      flip: false,
+      brightness: 1,
+      enabled: true,
+    });
+    expect(mocks.bridge.send).toHaveBeenCalledWith('setDevicePlacement', {
+      deviceId: 'corsair:K95',
+      anchor: 'left',
+    });
+  });
+
+  it('a brightness-only change debounces, keyed per device', () => {
+    initWithConfig();
+    glue.setDevicePlacement('corsair:K95', { brightness: 0.3 });
+    glue.setDevicePlacement('corsair:K95', { brightness: 0.6 });
+    glue.setDevicePlacement('corsair:strip', { brightness: 0.9 });
+    expect(getState().settings?.devicePlacements['corsair:K95'].brightness).toBe(0.6);
+    expect(mocks.bridge.send).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(120);
+    expect(mocks.bridge.send).toHaveBeenCalledTimes(2);
+    expect(mocks.bridge.send).toHaveBeenCalledWith('setDevicePlacement', {
+      deviceId: 'corsair:K95',
+      brightness: 0.6,
+    });
+    expect(mocks.bridge.send).toHaveBeenCalledWith('setDevicePlacement', {
+      deviceId: 'corsair:strip',
+      brightness: 0.9,
+    });
+  });
+
+  it('an exclude toggle keeps earlier placement fields intact locally', () => {
+    initWithConfig({
+      devicePlacements: { 'corsair:K95': { anchor: 'left', flip: true, brightness: 0.5, enabled: true } },
+    });
+    glue.setDevicePlacement('corsair:K95', { enabled: false });
+    expect(getState().settings?.devicePlacements['corsair:K95']).toEqual({
+      anchor: 'left',
+      flip: true,
+      brightness: 0.5,
+      enabled: false,
+    });
+    expect(mocks.bridge.send).toHaveBeenCalledWith('setDevicePlacement', {
+      deviceId: 'corsair:K95',
+      enabled: false,
+    });
+  });
+});
+
 describe('misc commands', () => {
   it('setAutostart patches and sends', () => {
     initWithConfig({ autostart: false });
@@ -421,6 +588,40 @@ describe('misc commands', () => {
     initWithConfig();
     glue.windowCommand('minimize');
     expect(mocks.bridge.send).toHaveBeenCalledWith('windowCommand', { action: 'minimize' });
+  });
+
+  it('quitApp sends the quit command (Story 7.3)', () => {
+    initWithConfig();
+    glue.quitApp();
+    expect(mocks.bridge.send).toHaveBeenCalledWith('quitApp', {});
+  });
+
+  it('setCloseAction patches optimistically and sends', () => {
+    initWithConfig();
+    glue.setCloseAction('quit');
+    expect(getState().settings?.closeAction).toBe('quit');
+    expect(mocks.bridge.send).toHaveBeenCalledWith('setCloseAction', { action: 'quit' });
+  });
+
+  it('resolveClosePrompt closes the modal, optionally remembers, and sends', () => {
+    initWithConfig();
+    getState().openClosePrompt();
+
+    glue.resolveClosePrompt('minimizeToTray', false);
+    expect(getState().closePromptOpen).toBe(false);
+    expect(getState().settings?.closeAction).toBe('ask'); // not remembered
+    expect(mocks.bridge.send).toHaveBeenCalledWith('resolveClosePrompt', {
+      action: 'minimizeToTray',
+      remember: false,
+    });
+
+    getState().openClosePrompt();
+    glue.resolveClosePrompt('quit', true);
+    expect(getState().settings?.closeAction).toBe('quit'); // remembered locally too
+    expect(mocks.bridge.send).toHaveBeenCalledWith('resolveClosePrompt', {
+      action: 'quit',
+      remember: true,
+    });
   });
 
   it('completeOnboarding patches firstRunCompleted and sends', () => {

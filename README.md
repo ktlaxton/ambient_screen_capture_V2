@@ -18,7 +18,7 @@ Turn idle secondary monitors into reactive ambient lighting. AmbientFx captures 
 
 - The engine does all heavy analysis natively; only ~2 KB JSON frames (edge colors + FFT bands) cross the bridge per tick. Raw video never leaves the engine.
 - Effects are self-contained web modules (`web/src/effects/<id>/`) — adding one requires **no engine changes** ([guide](#adding-an-effect)).
-- Ships five effects: **Edge Glow** (layout-aware Ambilight), **Plasma Flow**, **Spectrum Bars**, **Particle Field**, **Aurora**.
+- Ships eleven effects: **Edge Glow** (layout-aware Ambilight), **Plasma Flow**, **Spectrum Bars**, **Particle Field**, **Aurora**, **Nebula**, **Fire**, **Rain**, **Waveform**, **Kaleidoscope**, **Ripple** — each with tunable parameters, screen-reactive or fixed color palettes, and live gallery previews.
 
 ## Requirements
 
@@ -40,7 +40,7 @@ dotnet build AmbientFx.sln
 dotnet run --project src/Engine/AmbientFx.csproj
 ```
 
-First run shows an onboarding wizard: pick the source monitor, the target monitor(s), and a starting effect. The app lives in the system tray; closing the window hides it (tray → Exit to quit). `--minimized` starts straight to the tray (used by autostart).
+First run shows an onboarding wizard: pick the source monitor, the target monitor(s), and a starting effect. The app lives in the system tray; the first time you close the window it asks whether to keep running in the tray or quit for real (remembered, changeable in Settings — which also has a Quit button, as does the tray menu). `--minimized` starts straight to the tray (used by autostart).
 
 ## Project layout
 
@@ -103,6 +103,13 @@ cd web && npm test                 # web: bridge contract, simulator, registry/m
 - **No audio reaction** — the engine analyzes the *default render device* via loopback; exclusive-mode audio apps bypass loopback.
 - **Capture stops after display changes** — the engine auto-recovers; if a source monitor disconnects, effects pause with a toast and can be re-enabled.
 
+## Installing & releasing
+
+AmbientFx ships as a self-contained Velopack installer (`AmbientFx-win-Setup.exe`) with
+background auto-updates from GitHub Releases — no .NET or dev tools needed on the target
+machine. To cut a release: `./build.ps1 -Version x.y.z` (web build → publish → installer in
+one command). Full process, code signing and update-feed details: [docs/RELEASING.md](docs/RELEASING.md).
+
 ## Out of scope (this release)
 
-MSIX packaging / code signing / auto-update (planned next), hardware LEDs (Hue/Govee/OpenRGB), per-game integrations, anything Unreal Engine.
+MSIX / Store submission, hardware LEDs (Hue/Govee/OpenRGB), per-game integrations, anything Unreal Engine.

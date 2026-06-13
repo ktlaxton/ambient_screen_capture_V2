@@ -13,37 +13,27 @@ import type {
   EffectModule,
   GlobalRenderSettings,
 } from '../types';
+import { paletteStops, readPaletteId, samplePalette } from '../shared/palettes';
+import {
+  bandAvg,
+  clamp,
+  easeFactor,
+  readBoolean,
+  readNumber,
+  readString,
+} from '../shared/params';
 import { SpectrumProcessor } from './spectrum';
 import { FRAGMENT_SHADER, VERTEX_SHADER } from './shaders';
 
-const DEFAULTS = { barCount: 32, glow: 0.5, reflection: 0.4, style: 'bars' } as const;
+const DEFAULTS = {
+  barCount: 32,
+  glow: 0.5,
+  reflection: 0.4,
+  style: 'bars',
+  screenColors: true,
+  palette: 'neon',
+} as const;
 const FALLBACK_STOPS = 8;
-
-const clamp = (x: number, lo: number, hi: number): number => (x < lo ? lo : x > hi ? hi : x);
-
-/** dt-scaled exponential smoothing factor (dt and tau in seconds). */
-const easeFactor = (dt: number, tau: number): number => 1 - Math.exp(-dt / tau);
-
-function readNumber(params: EffectParams, key: string, fallback: number): number {
-  const v = params[key];
-  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
-}
-
-function readString(params: EffectParams, key: string, fallback: string): string {
-  const v = params[key];
-  return typeof v === 'string' ? v : fallback;
-}
-
-/** Average of bands over the fractional index range [f0, f1] (length varies 8-16). */
-function bandAvg(bands: number[], f0: number, f1: number): number {
-  const n = bands.length;
-  if (n === 0) return 0;
-  const lo = Math.round(f0 * (n - 1));
-  const hi = Math.max(lo, Math.round(f1 * (n - 1)));
-  let sum = 0;
-  for (let i = lo; i <= hi; i++) sum += clamp(bands[i] ?? 0, 0, 1);
-  return sum / (hi - lo + 1);
-}
 
 function makeBarsTexture(data: Float32Array, count: number): THREE.DataTexture {
   const tex = new THREE.DataTexture(data, count, 1, THREE.RGFormat, THREE.FloatType);
@@ -124,6 +114,10 @@ class AudioBarsInstance implements EffectInstance {
   private reflectTarget: number = DEFAULTS.reflection;
   private reflectCur: number = DEFAULTS.reflection;
   private styleRadial = false;
+
+  // Color source (Story 7.2): live screen TOP-edge gradient vs a named fixed palette.
+  private screenColors: boolean = DEFAULTS.screenColors;
+  private paletteId: string = DEFAULTS.palette;
 
   // Globals.
   private intensityTarget = 1;
@@ -211,9 +205,22 @@ class AudioBarsInstance implements EffectInstance {
     if (attack > 0.05) this.kickTarget = Math.min(1, this.kickTarget + attack * 2.2);
     this.bassLatest = bass;
 
-    this.setGradientTargets(frame.edges.top, frame.dominant);
-    const [dr, dg, db] = frame.dominant;
-    this.domTarget.setRGB(dr / 255, dg / 255, db / 255);
+    if (this.screenColors) {
+      this.setGradientTargets(frame.edges.top, frame.dominant);
+      const [dr, dg, db] = frame.dominant;
+      this.domTarget.setRGB(dr / 255, dg / 255, db / 255);
+    }
+  }
+
+  /** Fixed-palette mode: the bar gradient + dominant come from the named palette. */
+  private refreshFixedTargets(): void {
+    paletteStops(this.paletteId, this.gradLen, this.gradTarget);
+    const [r, g, b] = samplePalette(this.paletteId, 0.6);
+    this.domTarget.setRGB(r, g, b);
+    if (!this.gradSeeded) {
+      this.gradCur.set(this.gradTarget);
+      this.gradSeeded = true;
+    }
   }
 
   render(timeMs: number, dtMs: number): void {
@@ -282,6 +289,14 @@ class AudioBarsInstance implements EffectInstance {
     this.glowTarget = clamp(readNumber(params, 'glow', DEFAULTS.glow), 0, 1);
     this.reflectTarget = clamp(readNumber(params, 'reflection', DEFAULTS.reflection), 0, 1);
     this.styleRadial = readString(params, 'style', DEFAULTS.style) === 'radial';
+
+    const screen = readBoolean(params, 'screenColors', DEFAULTS.screenColors);
+    const palette = readPaletteId(params, 'palette', DEFAULTS.palette);
+    if (screen !== this.screenColors || palette !== this.paletteId) {
+      this.screenColors = screen;
+      this.paletteId = palette;
+      if (!screen) this.refreshFixedTargets();
+    }
   }
 
   setGlobals(globals: GlobalRenderSettings): void {
@@ -394,6 +409,8 @@ const audioBars: EffectModule = {
       ],
       default: DEFAULTS.style,
     },
+    { key: 'screenColors', label: 'Screen colors', type: 'toggle', default: DEFAULTS.screenColors },
+    { key: 'palette', label: 'Palette', type: 'palette', default: DEFAULTS.palette },
   ],
   create: (ctx: EffectContext): EffectInstance => new AudioBarsInstance(ctx),
 };

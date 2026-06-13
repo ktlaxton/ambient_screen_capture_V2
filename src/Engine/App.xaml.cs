@@ -1,9 +1,11 @@
 using System.IO;
 using AmbientFx.Capture;
+using AmbientFx.Devices;
 using AmbientFx.Hosting;
 using AmbientFx.Processing;
 using AmbientFx.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Events;
 using Application = System.Windows.Application;
@@ -177,6 +179,13 @@ public partial class App : Application
         services.AddSingleton<ISystemTrayService, SystemTrayService>();
         services.AddSingleton<IAutostartService, AutostartService>();
         services.AddSingleton<IHotkeyService, HotkeyService>();
+        services.AddSingleton<IUpdateService, UpdateService>();
+        // One backend per connection session (Story 8.1): the factory creates a fresh
+        // RGB.NET session on each enable (with the currently enabled vendor providers,
+        // Story 8.3); disposing it returns lighting control to the vendor software.
+        services.AddSingleton<IAmbientDeviceService>(sp => new RgbNetAmbientDeviceService(
+            providers => new RgbNetBackend(sp.GetRequiredService<ILogger<RgbNetBackend>>(), providers),
+            sp.GetRequiredService<ILogger<RgbNetAmbientDeviceService>>()));
         services.AddSingleton<IEngineCoordinator, EngineCoordinator>();
     }
 

@@ -16,7 +16,9 @@ import { EffectParams } from './components/EffectParams';
 import { GlobalControls } from './components/GlobalControls';
 import { PresetsPanel } from './components/PresetsPanel';
 import { SettingsPanel } from './components/SettingsPanel';
+import { DevicesPanel } from './components/DevicesPanel';
 import { Onboarding } from './components/Onboarding';
+import { ClosePrompt } from './components/ClosePrompt';
 import { Toasts } from './components/Toasts';
 import './App.css';
 
@@ -61,6 +63,7 @@ function BootScreen() {
 export default function App() {
   const settings = useControlStore((s) => s.settings);
   const onboardingOpen = useControlStore((s) => s.onboardingOpen);
+  const closePromptOpen = useControlStore((s) => s.closePromptOpen);
 
   return (
     <>
@@ -123,10 +126,20 @@ export default function App() {
               </div>
               <SettingsPanel settings={settings} />
             </section>
+            <section className="card col-12">
+              <div className="card-title">
+                <span className="dot" />
+                RGB peripherals
+                <span className="spacer" />
+                <span className="hint-faint">Corsair via iCUE — auto-mapped to screen edges</span>
+              </div>
+              <DevicesPanel settings={settings} />
+            </section>
           </main>
         </div>
       )}
       {onboardingOpen && <Onboarding />}
+      {closePromptOpen && <ClosePrompt />}
       <Toasts />
     </>
   );

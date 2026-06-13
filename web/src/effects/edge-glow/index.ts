@@ -5,6 +5,9 @@
 import * as THREE from 'three';
 import type { EffectParams, FramePayload, RGB } from '../../shared/bridge';
 import type { EffectContext, EffectInstance, EffectModule } from '../types';
+import { projectMonitors, projectionFromRelation, type EdgeProjection } from '../shared/monitorProjection';
+import { paletteStops, readPaletteId } from '../shared/palettes';
+import { clamp, hexToRgb01, readBoolean, readNumber, readString } from '../shared/params';
 import { EDGE_GLOW_FS, FULLSCREEN_VS } from './shaders';
 
 const ROWS = 4; // DataTexture rows: 0 top, 1 bottom, 2 left, 3 right
@@ -12,13 +15,12 @@ const COLOR_TAU_MS = 120; // snappy but not flickery (engine already smooths)
 const AUDIO_TAU_MS = 90;
 const MAX_ZONES = 64;
 
-function asNumber(v: number | string | boolean | undefined, fallback: number): number {
-  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return Math.min(hi, Math.max(lo, v));
-}
+const COLOR_DEFAULTS = {
+  screenColors: true,
+  palette: 'warm',
+  tintColor: '#4f7cff',
+  tintStrength: 0,
+} as const;
 
 /** Fractionally resamples a zone strip (RGB 0-255) onto `w` texels (0..1 floats). */
 function resampleRow(zones: RGB[], out: Float32Array, offset: number, w: number): void {
@@ -72,6 +74,12 @@ class EdgeGlowInstance implements EffectInstance {
   private bassCurrent = 0;
   private bassTarget = 0;
 
+  // Color source (Story 7.2): live screen colors vs fixed palette, plus a tint mix.
+  private screenColors: boolean = COLOR_DEFAULTS.screenColors;
+  private paletteId: string = COLOR_DEFAULTS.palette;
+  private tintRgb: [number, number, number] = hexToRgb01(COLOR_DEFAULTS.tintColor);
+  private tintStrength: number = COLOR_DEFAULTS.tintStrength;
+
   private readonly dprCap: number;
 
   constructor(ctx: EffectContext) {
@@ -85,42 +93,33 @@ class EdgeGlowInstance implements EffectInstance {
       depth: false,
     });
 
-    // Layout awareness (FR7): which window side the light enters from, and
-    // which source-edge row of the DataTexture feeds it. relation 'none'
-    // (or missing windowConfig — previews/browser) => ambient halo mode.
-    const relation = ctx.windowConfig?.relation ?? 'none';
-    let mode = 0;
-    let entry = 0; // 0=left 1=right 2=bottom 3=top
-    let row = 0.875;
-    const rowV = (r: number) => (r + 0.5) / ROWS;
-    switch (relation) {
-      case 'right': // window right of source -> light from the LEFT, source RIGHT edge
-        entry = 0;
-        row = rowV(3);
-        break;
-      case 'left':
-        entry = 1;
-        row = rowV(2);
-        break;
-      case 'above': // window above source -> light from the BOTTOM, source TOP edge
-        entry = 2;
-        row = rowV(0);
-        break;
-      case 'below':
-        entry = 3;
-        row = rowV(1);
-        break;
-      default:
-        mode = 1;
+    // Layout awareness (FR7 + Story 7.5): project the real monitor rects so the
+    // glow samples only the physically aligned span of the source edge (offset/
+    // size/diagonal aware). Falls back to the coarse relation when rects are
+    // missing, and to the ambient halo when there is no usable layout at all
+    // (previews/browser, mirrored displays, relation 'none').
+    const wc = ctx.windowConfig;
+    let edges: EdgeProjection[] = [];
+    if (wc) {
+      edges = projectMonitors(wc.source, wc.monitor);
+      if (edges.length === 0) edges = projectionFromRelation(wc.relation);
     }
+    const rowV = (r: number) => (r + 0.5) / ROWS;
+    const pad: EdgeProjection = { entry: 0, sourceRow: 0, scale: 1, offset: 0, weight: 0 };
+    const e0 = edges[0] ?? pad;
+    const e1 = edges[1] ?? pad;
 
     this.material = new THREE.ShaderMaterial({
       defines: { TAPS: ctx.preview ? 2 : 3 }, // ~4x cheaper edge blur in gallery previews
       uniforms: {
         uTex: { value: null },
-        uMode: { value: mode },
-        uEntry: { value: entry },
-        uRow: { value: row },
+        uMode: { value: edges.length === 0 ? 1 : 0 },
+        uEdgeCount: { value: edges.length },
+        uEntry: { value: [e0.entry, e1.entry] },
+        uRow: { value: [rowV(e0.sourceRow), rowV(e1.sourceRow)] },
+        uScale: { value: [e0.scale, e1.scale] },
+        uOffset: { value: [e0.offset, e1.offset] },
+        uWeight: { value: [e0.weight, e1.weight] },
         uZones: { value: 1 },
         uReach: { value: 0.55 },
         uSpread: { value: 0.5 },
@@ -177,15 +176,43 @@ class EdgeGlowInstance implements EffectInstance {
   onFrame(frame: FramePayload): void {
     const { top, bottom, left, right } = frame.edges;
     const w = Math.max(top.length, bottom.length, left.length, right.length, 1);
+    const rebuilt = w !== this.zones;
     this.ensureField(w);
-    const stride = this.zones * 3;
-    resampleRow(top, this.target, 0 * stride, this.zones);
-    resampleRow(bottom, this.target, 1 * stride, this.zones);
-    resampleRow(left, this.target, 2 * stride, this.zones);
-    resampleRow(right, this.target, 3 * stride, this.zones);
+    if (this.screenColors) {
+      const stride = this.zones * 3;
+      resampleRow(top, this.target, 0 * stride, this.zones);
+      resampleRow(bottom, this.target, 1 * stride, this.zones);
+      resampleRow(left, this.target, 2 * stride, this.zones);
+      resampleRow(right, this.target, 3 * stride, this.zones);
+      this.applyTint();
+    } else if (rebuilt) {
+      this.refreshFixedTargets(); // zone count changed under fixed palette mode
+    }
 
     this.audioTarget = clamp(frame.audio.intensity, 0, 1);
     this.bassTarget = bassOf(frame.audio.bands);
+  }
+
+  /** Mixes the color targets toward the tint color by tintStrength (no-op at 0). */
+  private applyTint(): void {
+    const k = this.tintStrength;
+    if (k <= 0) return;
+    const [tr, tg, tb] = this.tintRgb;
+    const t = this.target;
+    for (let i = 0; i < t.length; i += 3) {
+      t[i] += (tr - t[i]) * k;
+      t[i + 1] += (tg - t[i + 1]) * k;
+      t[i + 2] += (tb - t[i + 2]) * k;
+    }
+  }
+
+  /** Fixed-palette mode: every row gets the named palette's gradient (+ tint). */
+  private refreshFixedTargets(): void {
+    const row = paletteStops(this.paletteId, this.zones);
+    for (let r = 0; r < ROWS; r++) {
+      this.target.set(row, r * this.zones * 3);
+    }
+    this.applyTint();
   }
 
   render(timeMs: number, dtMs: number): void {
@@ -222,10 +249,23 @@ class EdgeGlowInstance implements EffectInstance {
 
   setParams(params: EffectParams): void {
     const u = this.material.uniforms;
-    u.uReach.value = clamp(asNumber(params.reach, 0.55), 0.2, 1);
-    u.uSpread.value = clamp(asNumber(params.spread, 0.5), 0.1, 1);
-    u.uAudioPulse.value = clamp(asNumber(params.audioPulse, 0.35), 0, 1);
-    u.uColorBoost.value = clamp(asNumber(params.colorBoost, 0.35), 0, 1);
+    u.uReach.value = clamp(readNumber(params, 'reach', 0.55), 0.2, 1);
+    u.uSpread.value = clamp(readNumber(params, 'spread', 0.5), 0.1, 1);
+    u.uAudioPulse.value = clamp(readNumber(params, 'audioPulse', 0.35), 0, 1);
+    u.uColorBoost.value = clamp(readNumber(params, 'colorBoost', 0.35), 0, 1);
+
+    this.screenColors = readBoolean(params, 'screenColors', COLOR_DEFAULTS.screenColors);
+    this.paletteId = readPaletteId(params, 'palette', COLOR_DEFAULTS.palette);
+    this.tintRgb = hexToRgb01(
+      readString(params, 'tintColor', COLOR_DEFAULTS.tintColor),
+      hexToRgb01(COLOR_DEFAULTS.tintColor),
+    );
+    this.tintStrength = clamp(
+      readNumber(params, 'tintStrength', COLOR_DEFAULTS.tintStrength),
+      0,
+      1,
+    );
+    if (!this.screenColors) this.refreshFixedTargets();
   }
 
   setGlobals(globals: { intensity: number; brightness: number }): void {
@@ -259,6 +299,10 @@ const edgeGlow: EffectModule = {
     { key: 'spread', label: 'Spread', type: 'range', min: 0.1, max: 1, step: 0.01, default: 0.5 },
     { key: 'audioPulse', label: 'Audio pulse', type: 'range', min: 0, max: 1, step: 0.01, default: 0.35 },
     { key: 'colorBoost', label: 'Color boost', type: 'range', min: 0, max: 1, step: 0.01, default: 0.35 },
+    { key: 'screenColors', label: 'Screen colors', type: 'toggle', default: COLOR_DEFAULTS.screenColors },
+    { key: 'palette', label: 'Palette', type: 'palette', default: COLOR_DEFAULTS.palette },
+    { key: 'tintColor', label: 'Tint color', type: 'color', default: COLOR_DEFAULTS.tintColor },
+    { key: 'tintStrength', label: 'Tint strength', type: 'range', min: 0, max: 1, step: 0.01, default: COLOR_DEFAULTS.tintStrength },
   ],
   create(ctx: EffectContext): EffectInstance {
     return new EdgeGlowInstance(ctx);

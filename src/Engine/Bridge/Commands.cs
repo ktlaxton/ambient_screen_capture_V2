@@ -20,6 +20,13 @@ public static class CommandTypes
     public const string WindowCommand = "windowCommand";
     public const string CompleteOnboarding = "completeOnboarding";
     public const string ReportError = "reportError";
+    public const string QuitApp = "quitApp";
+    public const string SetCloseAction = "setCloseAction";
+    public const string ResolveClosePrompt = "resolveClosePrompt";
+    public const string CheckForUpdates = "checkForUpdates";
+    public const string SetDevices = "setDevices";
+    public const string SetDevicePlacement = "setDevicePlacement";
+    public const string SetRgbProviders = "setRgbProviders";
 }
 
 /// <summary>Incoming envelope from any WebView2: {"type":"...","payload":{...}}.</summary>
@@ -104,6 +111,52 @@ public sealed class SetHotkeyCmd
 
 /// <summary>Custom-chrome window controls. Action: "minimize" | "maximize" | "restore" | "close".</summary>
 public sealed class WindowCommandCmd { public string Action { get; set; } = string.Empty; }
+
+/// <summary>Persisted close-the-window behavior (Story 7.3). Action: "ask" | "quit" | "minimizeToTray".</summary>
+public sealed class SetCloseActionCmd { public string Action { get; set; } = string.Empty; }
+
+/// <summary>The user's answer to the closePrompt modal (Story 7.3). Action: "quit" | "minimizeToTray".</summary>
+public sealed class ResolveClosePromptCmd
+{
+    public string Action { get; set; } = string.Empty;
+    public bool Remember { get; set; }
+}
+
+/// <summary>Ambient RGB peripherals (Stories 8.1/8.3). Partial update — only non-null fields are applied.</summary>
+public sealed class SetDevicesCmd
+{
+    public bool? Enabled { get; set; }
+    public float? Brightness { get; set; }
+
+    /// <summary>Audio-reactive layer toggle (Story 8.3).</summary>
+    public bool? AudioReactive { get; set; }
+
+    /// <summary>Audio-reactive depth 0..1 (Story 8.3).</summary>
+    public float? AudioDepth { get; set; }
+}
+
+/// <summary>Replaces the enabled RGB vendor provider set (Story 8.3); forces a reconnect.</summary>
+public sealed class SetRgbProvidersCmd
+{
+    public List<string> Providers { get; set; } = new();
+}
+
+/// <summary>
+/// Per-device placement/tuning (Story 8.2). Partial update against the device's stored
+/// <see cref="AmbientFx.Models.DevicePlacement"/>; only non-null fields are applied.
+/// </summary>
+public sealed class SetDevicePlacementCmd
+{
+    /// <summary>Stable device id (the id from the devices payload).</summary>
+    public string DeviceId { get; set; } = string.Empty;
+
+    /// <summary>A <see cref="AmbientFx.Models.DeviceAnchors"/> value.</summary>
+    public string? Anchor { get; set; }
+
+    public bool? Flip { get; set; }
+    public float? Brightness { get; set; }
+    public bool? Enabled { get; set; }
+}
 
 /// <summary>
 /// The web layer reporting a fatal/runtime failure (e.g. an effect crashed) so the engine

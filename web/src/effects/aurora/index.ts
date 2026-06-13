@@ -12,30 +12,18 @@ import type {
   EffectModule,
   GlobalRenderSettings,
 } from '../types';
+import { paletteStops, readPaletteId, samplePalette } from '../shared/palettes';
+import { bandAvg, clamp, easeFactor, readBoolean, readNumber } from '../shared/params';
 import { FRAGMENT_SHADER, VERTEX_SHADER } from './shaders';
 
-const DEFAULTS = { ribbons: 4, sway: 0.5, tint: 0.35, audioDrive: 0.5 } as const;
-
-const clamp = (x: number, lo: number, hi: number): number => (x < lo ? lo : x > hi ? hi : x);
-
-function readNumber(params: EffectParams, key: string, fallback: number): number {
-  const v = params[key];
-  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
-}
-
-/** Average of bands over the fractional index range [f0, f1] (length varies 8-16). */
-function bandAvg(bands: number[], f0: number, f1: number): number {
-  const n = bands.length;
-  if (n === 0) return 0;
-  const lo = Math.round(f0 * (n - 1));
-  const hi = Math.max(lo, Math.round(f1 * (n - 1)));
-  let sum = 0;
-  for (let i = lo; i <= hi; i++) sum += clamp(bands[i] ?? 0, 0, 1);
-  return sum / (hi - lo + 1);
-}
-
-/** dt-scaled exponential smoothing factor (dt and tau in seconds). */
-const easeFactor = (dt: number, tau: number): number => 1 - Math.exp(-dt / tau);
+const DEFAULTS = {
+  ribbons: 4,
+  sway: 0.5,
+  tint: 0.35,
+  audioDrive: 0.5,
+  screenColors: true,
+  palette: 'aurora',
+} as const;
 
 /** The source edge whose colors feed the curtain bases, given monitor layout. */
 function pickEdge(relation: MonitorRelation, frame: FramePayload): RGB[] {
@@ -113,6 +101,10 @@ class AuroraInstance implements EffectInstance {
   private tintTarget: number = DEFAULTS.tint;
   private tintCur: number = DEFAULTS.tint;
   private audioDrive: number = DEFAULTS.audioDrive;
+
+  // Color source (Story 7.2): live screen edge colors vs a named fixed palette.
+  private screenColors: boolean = DEFAULTS.screenColors;
+  private paletteId: string = DEFAULTS.palette;
 
   // Globals.
   private intensityTarget = 1;
@@ -213,27 +205,41 @@ class AuroraInstance implements EffectInstance {
     this.uniforms.uEdge.value = this.edgeTexture;
   }
 
+  /** Fixed-palette mode: curtain bases + dominant come from the named palette. */
+  private refreshFixedTargets(): void {
+    paletteStops(this.paletteId, this.zones, this.edgeTarget);
+    const [r, g, b] = samplePalette(this.paletteId, 0.55);
+    this.dominantTarget.set(r, g, b);
+  }
+
   onFrame(frame: FramePayload): void {
     const edge = pickEdge(this.relation, frame);
     if (edge.length > 0 && edge.length !== this.zones) {
       this.rebuildEdge(edge.length);
-      for (let i = 0; i < edge.length; i++) {
-        this.edgeCur[i * 3 + 0] = edge[i][0] / 255;
-        this.edgeCur[i * 3 + 1] = edge[i][1] / 255;
-        this.edgeCur[i * 3 + 2] = edge[i][2] / 255;
+      if (this.screenColors) {
+        for (let i = 0; i < edge.length; i++) {
+          this.edgeCur[i * 3 + 0] = edge[i][0] / 255;
+          this.edgeCur[i * 3 + 1] = edge[i][1] / 255;
+          this.edgeCur[i * 3 + 2] = edge[i][2] / 255;
+        }
+      } else {
+        this.refreshFixedTargets();
+        this.edgeCur.set(this.edgeTarget);
       }
       this.edgeDirty = true;
     }
-    for (let i = 0; i < Math.min(edge.length, this.zones); i++) {
-      this.edgeTarget[i * 3 + 0] = edge[i][0] / 255;
-      this.edgeTarget[i * 3 + 1] = edge[i][1] / 255;
-      this.edgeTarget[i * 3 + 2] = edge[i][2] / 255;
+    if (this.screenColors) {
+      for (let i = 0; i < Math.min(edge.length, this.zones); i++) {
+        this.edgeTarget[i * 3 + 0] = edge[i][0] / 255;
+        this.edgeTarget[i * 3 + 1] = edge[i][1] / 255;
+        this.edgeTarget[i * 3 + 2] = edge[i][2] / 255;
+      }
+      this.dominantTarget.set(
+        frame.dominant[0] / 255,
+        frame.dominant[1] / 255,
+        frame.dominant[2] / 255,
+      );
     }
-    this.dominantTarget.set(
-      frame.dominant[0] / 255,
-      frame.dominant[1] / 255,
-      frame.dominant[2] / 255,
-    );
 
     const bands = frame.audio.bands;
     this.bassTarget = clamp(bandAvg(bands, 0, 0.25) * (0.5 + 0.5 * frame.audio.intensity), 0, 1);
@@ -310,6 +316,14 @@ class AuroraInstance implements EffectInstance {
     this.swayTarget = clamp(readNumber(params, 'sway', DEFAULTS.sway), 0, 1);
     this.tintTarget = clamp(readNumber(params, 'tint', DEFAULTS.tint), 0, 1);
     this.audioDrive = clamp(readNumber(params, 'audioDrive', DEFAULTS.audioDrive), 0, 1);
+
+    const screen = readBoolean(params, 'screenColors', DEFAULTS.screenColors);
+    const palette = readPaletteId(params, 'palette', DEFAULTS.palette);
+    if (screen !== this.screenColors || palette !== this.paletteId) {
+      this.screenColors = screen;
+      this.paletteId = palette;
+      if (!screen) this.refreshFixedTargets();
+    }
   }
 
   setGlobals(globals: GlobalRenderSettings): void {
@@ -349,6 +363,8 @@ const aurora: EffectModule = {
     { key: 'sway', label: 'Sway', type: 'range', min: 0, max: 1, step: 0.01, default: DEFAULTS.sway },
     { key: 'tint', label: 'Aurora tint', type: 'range', min: 0, max: 1, step: 0.01, default: DEFAULTS.tint },
     { key: 'audioDrive', label: 'Audio drive', type: 'range', min: 0, max: 1, step: 0.01, default: DEFAULTS.audioDrive },
+    { key: 'screenColors', label: 'Screen colors', type: 'toggle', default: DEFAULTS.screenColors },
+    { key: 'palette', label: 'Palette', type: 'palette', default: DEFAULTS.palette },
   ],
   create: (ctx: EffectContext): EffectInstance => new AuroraInstance(ctx),
 };

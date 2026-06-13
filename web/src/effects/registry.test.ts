@@ -3,14 +3,15 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EFFECT_ID, effects, effectsById, getEffect } from './registry';
 import { defaultParamsOf } from './types';
+import { isPaletteId } from './shared/palettes';
 import manifest from './manifest.json';
 
 const sortById = <T extends { id: string }>(arr: T[]): T[] =>
   [...arr].sort((a, b) => a.id.localeCompare(b.id));
 
 describe('effects registry / manifest sync (NFR8)', () => {
-  it('exposes exactly 5 effects with unique ids', () => {
-    expect(effects).toHaveLength(5);
+  it('exposes exactly 11 effects with unique ids', () => {
+    expect(effects).toHaveLength(11);
     const ids = effects.map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
@@ -82,6 +83,19 @@ describe('param hygiene (every module)', () => {
             expect(values, label).toContain(def.default as string);
           } else if (def.type === 'toggle') {
             expect(typeof def.default, label).toBe('boolean');
+          }
+        }
+      });
+
+      it('color params default to #rrggbb hex; palette params default to a known palette id', () => {
+        for (const def of module.params) {
+          const label = `${module.id}.${def.key}`;
+          if (def.type === 'color') {
+            expect(typeof def.default, label).toBe('string');
+            expect(def.default as string, label).toMatch(/^#[0-9a-f]{6}$/i);
+          } else if (def.type === 'palette') {
+            expect(typeof def.default, label).toBe('string');
+            expect(isPaletteId(def.default as string), `${label} default must be a registered palette`).toBe(true);
           }
         }
       });

@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using AmbientFx.Bridge;
 using AmbientFx.Capture;
+using AmbientFx.Devices;
 using AmbientFx.Hosting;
 using AmbientFx.Models;
 using AmbientFx.Processing;
@@ -41,6 +42,8 @@ public sealed class EngineCoordinator : IEngineCoordinator
     private readonly IAudioCaptureService _audio;
     private readonly IDataProcessingService _processing;
     private readonly IWebViewWindowManager _windowManager;
+    private readonly IUpdateService _updates;
+    private readonly IAmbientDeviceService _ambientDevices;
     private readonly ILogger<EngineCoordinator> _logger;
 
     /// <summary>Guards _settings mutations and snapshot clones (UI thread writes, threadpool save reads).</summary>
@@ -67,6 +70,8 @@ public sealed class EngineCoordinator : IEngineCoordinator
         IAudioCaptureService audio,
         IDataProcessingService processing,
         IWebViewWindowManager windowManager,
+        IUpdateService updates,
+        IAmbientDeviceService ambientDevices,
         ILogger<EngineCoordinator> logger)
     {
         _settingsService = settingsService;
@@ -78,6 +83,8 @@ public sealed class EngineCoordinator : IEngineCoordinator
         _audio = audio;
         _processing = processing;
         _windowManager = windowManager;
+        _updates = updates;
+        _ambientDevices = ambientDevices;
         _logger = logger;
 
         // Debounce timer; callback runs on the threadpool and only touches a cloned snapshot.
@@ -94,6 +101,15 @@ public sealed class EngineCoordinator : IEngineCoordinator
         _settings = await _settingsService.LoadAsync();
         _monitors = _monitorDetection.GetMonitors();
 
+        // First run: seed the curated preset library (Story 7.2 AC6) so the preset
+        // panel/tray aren't empty out of the box. Never re-seed once the user has data.
+        if (!_settings.FirstRunCompleted && _settings.Presets.Count == 0)
+        {
+            lock (_gate) { _settings.Presets = DefaultPresets.Build(_settings); }
+            _logger.LogInformation("Seeded {Count} default presets (first run)", _settings.Presets.Count);
+            SaveNow();
+        }
+
         await _windowManager.InitializeAsync();
 
         // Wire everything before any service starts producing events.
@@ -101,6 +117,7 @@ public sealed class EngineCoordinator : IEngineCoordinator
         _windowManager.ControlWindowCloseRequested += OnControlWindowCloseRequested;
         _windowManager.Error += OnPipelineError;
         _processing.FrameReady += OnFrameReady;
+        _ambientDevices.StateChanged += OnAmbientDevicesStateChanged;
         _capture.Error += OnPipelineError;
         _audio.Error += OnPipelineError;
         _tray.ToggleEnabledRequested += OnTrayToggleRequested;
@@ -130,6 +147,14 @@ public sealed class EngineCoordinator : IEngineCoordinator
         }
 
         ApplyEnabledState();
+
+        // Launch-time update check (Story 7.4 AC6): background, never blocks startup,
+        // silent when up to date. Only meaningful in a Velopack-installed build.
+        if (_updates.IsSupported)
+        {
+            _ = Task.Run(() => CheckForUpdatesSafeAsync(notifyWhenCurrent: false));
+        }
+
         foreach (var m in _monitors)
         {
             _logger.LogInformation("Monitor: id={Id} name={Name} bounds={X},{Y} {Width}x{Height} primary={Primary}",
@@ -208,6 +233,7 @@ public sealed class EngineCoordinator : IEngineCoordinator
             _capture.Start(source); // switches monitors internally if already capturing
             _audio.Start();
             _processing.Start();
+            ApplyAmbientDeviceState();
             _ = SyncEffectWindowsSafeAsync(BuildSpecs());
         }
         else if (_settings.IsEnabled) // enabled but no usable source
@@ -237,6 +263,52 @@ public sealed class EngineCoordinator : IEngineCoordinator
         catch (Exception ex) { _logger.LogError(ex, "Error stopping screen capture"); }
         try { _audio.Stop(); }
         catch (Exception ex) { _logger.LogError(ex, "Error stopping audio capture"); }
+        try { _ambientDevices.Stop(); } // releases lighting control back to iCUE (Story 8.1 AC5)
+        catch (Exception ex) { _logger.LogError(ex, "Error stopping ambient devices"); }
+    }
+
+    /// <summary>
+    /// Brings the ambient peripheral sink in line with settings (Story 8.1): runs only while
+    /// the pipeline runs AND the feature toggle is on. Never throws (NFR5).
+    /// </summary>
+    private void ApplyAmbientDeviceState()
+    {
+        bool run;
+        float brightness;
+        bool audioReactive;
+        float audioDepth;
+        Dictionary<string, DevicePlacement> placements;
+        List<string> providers;
+        lock (_gate)
+        {
+            run = _settings.IsEnabled && _settings.AmbientDevicesEnabled;
+            brightness = _settings.PeripheralBrightness;
+            audioReactive = _settings.AudioReactiveDevices;
+            audioDepth = _settings.AudioReactiveDepth;
+            // Private snapshots: the timer thread reads these while commands mutate the originals.
+            placements = _settings.DevicePlacements.ToDictionary(kv => kv.Key, kv => kv.Value.Clone());
+            providers = new List<string>(_settings.RgbProviders);
+        }
+        try
+        {
+            _ambientDevices.Brightness = brightness;
+            _ambientDevices.AudioReactiveEnabled = audioReactive;
+            _ambientDevices.AudioReactiveDepth = audioDepth;
+            _ambientDevices.SetPlacements(placements);
+            _ambientDevices.SetEnabledProviders(providers);
+            if (run && ResolveSource() is not null)
+            {
+                _ambientDevices.Start();
+            }
+            else
+            {
+                _ambientDevices.Stop();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error applying ambient device state");
+        }
     }
 
     private MonitorInfo? ResolveSource() =>
@@ -430,6 +502,94 @@ public sealed class EngineCoordinator : IEngineCoordinator
                 break;
             }
 
+            case CommandTypes.SetDevices:
+            {
+                if (envelope.PayloadAs<SetDevicesCmd>() is not { } cmd) { LogBadPayload(envelope); break; }
+                bool toggled = false;
+                lock (_gate)
+                {
+                    if (cmd.Enabled is { } enabled)
+                    {
+                        toggled = _settings.AmbientDevicesEnabled != enabled;
+                        _settings.AmbientDevicesEnabled = enabled;
+                    }
+                    if (cmd.Brightness is { } brightness)
+                    {
+                        _settings.PeripheralBrightness = Math.Clamp(brightness, 0f, 1f);
+                    }
+                    if (cmd.AudioReactive is { } audioReactive)
+                    {
+                        toggled |= _settings.AudioReactiveDevices != audioReactive;
+                        _settings.AudioReactiveDevices = audioReactive;
+                    }
+                    if (cmd.AudioDepth is { } audioDepth)
+                    {
+                        _settings.AudioReactiveDepth = Math.Clamp(audioDepth, 0f, 1f);
+                    }
+                }
+                ApplyAmbientDeviceState();
+                PushConfig();
+                if (toggled) SaveNow(); else ScheduleSave(); // sliders debounce, toggles save now
+                break;
+            }
+
+            case CommandTypes.SetRgbProviders:
+            {
+                if (envelope.PayloadAs<SetRgbProvidersCmd>() is not { } cmd) { LogBadPayload(envelope); break; }
+                lock (_gate)
+                {
+                    _settings.RgbProviders = (cmd.Providers ?? new List<string>())
+                        .Where(p => !string.IsNullOrWhiteSpace(p))
+                        .Distinct()
+                        .Take(16)
+                        .ToList();
+                }
+                // Provider set only takes effect on connect — force a fresh session (Story 8.3).
+                try { _ambientDevices.Stop(); }
+                catch (Exception ex) { _logger.LogError(ex, "Error stopping ambient devices for provider change"); }
+                ApplyAmbientDeviceState();
+                PushConfig();
+                SaveNow();
+                break;
+            }
+
+            case CommandTypes.SetDevicePlacement:
+            {
+                if (envelope.PayloadAs<SetDevicePlacementCmd>() is not { } cmd
+                    || string.IsNullOrEmpty(cmd.DeviceId))
+                {
+                    LogBadPayload(envelope);
+                    break;
+                }
+                // Anchor/flip/enable are discrete clicks; brightness alone is a slider drag.
+                bool discrete = cmd.Anchor is not null || cmd.Flip is not null || cmd.Enabled is not null;
+                lock (_gate)
+                {
+                    if (!_settings.DevicePlacements.TryGetValue(cmd.DeviceId, out var placement))
+                    {
+                        // Bounded like the effect-param bags: a rogue page can't grow settings.json.
+                        if (cmd.DeviceId.Length > 200 || _settings.DevicePlacements.Count >= 128)
+                        {
+                            break;
+                        }
+                        placement = new DevicePlacement();
+                        _settings.DevicePlacements[cmd.DeviceId] = placement;
+                    }
+                    if (cmd.Anchor is { } anchor && DeviceAnchors.IsValid(anchor)) placement.Anchor = anchor;
+                    if (cmd.Flip is { } flip) placement.Flip = flip;
+                    if (cmd.Brightness is { } brightness) placement.Brightness = Math.Clamp(brightness, 0f, 1f);
+                    if (cmd.Enabled is { } enabled) placement.Enabled = enabled;
+                    if (placement.IsDefault)
+                    {
+                        _settings.DevicePlacements.Remove(cmd.DeviceId); // back to Auto = no entry
+                    }
+                }
+                ApplyAmbientDeviceState(); // pushes the new mapping live (no reconnect)
+                PushConfig();
+                if (discrete) SaveNow(); else ScheduleSave();
+                break;
+            }
+
             case CommandTypes.SavePreset:
             {
                 if (envelope.PayloadAs<PresetCmd>() is not { } cmd) { LogBadPayload(envelope); break; }
@@ -531,6 +691,7 @@ public sealed class EngineCoordinator : IEngineCoordinator
                 {
                     _windowManager.PostToControl(MessageTypes.Config, BuildConfig());
                     _windowManager.PostToControl(MessageTypes.Monitors, BuildMonitorsPayload());
+                    _windowManager.PostToControl(MessageTypes.Devices, BuildDevicesPayload());
                 }
                 else
                 {
@@ -556,6 +717,58 @@ public sealed class EngineCoordinator : IEngineCoordinator
                 lock (_gate) { _settings.FirstRunCompleted = true; }
                 PushConfig();
                 SaveNow();
+                break;
+            }
+
+            case CommandTypes.QuitApp:
+            {
+                _logger.LogInformation("Quit requested from the control UI");
+                RequestShutdown();
+                break;
+            }
+
+            case CommandTypes.SetCloseAction:
+            {
+                if (envelope.PayloadAs<SetCloseActionCmd>() is not { } cmd || !CloseActions.IsValid(cmd.Action))
+                {
+                    LogBadPayload(envelope);
+                    break;
+                }
+                lock (_gate) { _settings.CloseAction = cmd.Action; }
+                PushConfig();
+                SaveNow();
+                break;
+            }
+
+            case CommandTypes.ResolveClosePrompt:
+            {
+                if (envelope.PayloadAs<ResolveClosePromptCmd>() is not { } cmd ||
+                    cmd.Action is not (CloseActions.Quit or CloseActions.MinimizeToTray))
+                {
+                    LogBadPayload(envelope);
+                    break;
+                }
+                if (cmd.Remember)
+                {
+                    lock (_gate) { _settings.CloseAction = cmd.Action; }
+                    PushConfig();
+                    SaveNow();
+                }
+                if (cmd.Action == CloseActions.Quit)
+                {
+                    _logger.LogInformation("Close prompt resolved: quit (remember={Remember})", cmd.Remember);
+                    RequestShutdown();
+                }
+                else
+                {
+                    HideToTray();
+                }
+                break;
+            }
+
+            case CommandTypes.CheckForUpdates:
+            {
+                _ = Task.Run(() => CheckForUpdatesSafeAsync(notifyWhenCurrent: true));
                 break;
             }
 
@@ -615,6 +828,24 @@ public sealed class EngineCoordinator : IEngineCoordinator
             applied.Presets = _settings.Presets;          // keep the existing preset list
             applied.FirstRunCompleted = _settings.FirstRunCompleted;
             applied.ActivePresetName = preset.Name;
+            // Machine-agnostic presets (e.g. the shipped defaults) carry no monitor
+            // selection — keep the user's monitors and enabled state instead of wiping them.
+            if (string.IsNullOrEmpty(applied.SourceMonitorId))
+            {
+                applied.SourceMonitorId = _settings.SourceMonitorId;
+                if (applied.TargetMonitorIds.Count == 0)
+                {
+                    applied.TargetMonitorIds = new List<string>(_settings.TargetMonitorIds);
+                }
+                applied.IsEnabled = _settings.IsEnabled;
+                // Same grace for the desk layout (Story 8.2): a preset that knows nothing
+                // about this machine's RGB devices must not wipe their placements.
+                if (applied.DevicePlacements.Count == 0)
+                {
+                    applied.DevicePlacements = _settings.DevicePlacements
+                        .ToDictionary(kv => kv.Key, kv => kv.Value.Clone());
+                }
+            }
             _settings = applied;
         }
 
@@ -730,8 +961,28 @@ public sealed class EngineCoordinator : IEngineCoordinator
     // ---------------------------------------------------------------------
 
     /// <summary>Background thread; PostToAll is thread-safe, so no marshaling (high frequency path).</summary>
-    private void OnFrameReady(object? sender, FrameReadyEventArgs e) =>
+    private void OnFrameReady(object? sender, FrameReadyEventArgs e)
+    {
+        // Second consumer of the same frame (Story 8.1; audio added in 8.3): non-blocking
+        // latest-wins hand-off; the device service rate-limits its own hardware pushes.
+        _ambientDevices.SubmitFrame(e.Frame);
         _windowManager.PostToAll(MessageTypes.Frame, e.Frame);
+    }
+
+    /// <summary>May fire on any thread; PostToControl marshals internally.</summary>
+    private void OnAmbientDevicesStateChanged(object? sender, EventArgs e) =>
+        _windowManager.PostToControl(MessageTypes.Devices, BuildDevicesPayload());
+
+    private DevicesPayload BuildDevicesPayload()
+    {
+        var snapshot = _ambientDevices.Snapshot;
+        return new DevicesPayload
+        {
+            ConnectionState = snapshot.ConnectionState,
+            Devices = snapshot.Devices.ToList(),
+            Providers = snapshot.Providers.ToList(),
+        };
+    }
 
     /// <summary>May fire on any thread; reaction is marshaled to the dispatcher (NFR5 — never crash).</summary>
     private void OnPipelineError(object? sender, PipelineErrorEventArgs e)
@@ -832,8 +1083,73 @@ public sealed class EngineCoordinator : IEngineCoordinator
 
     private void OnOpenSettingsRequested(object? sender, EventArgs e) => _ = ShowControlWindowSafeAsync();
 
-    private void OnTrayExitRequested(object? sender, EventArgs e) =>
-        System.Windows.Application.Current.Shutdown();
+    private void OnTrayExitRequested(object? sender, EventArgs e) => RequestShutdown();
+
+    /// <summary>
+    /// THE one shutdown path (Story 7.3 AC2/AC7): tray Exit, the in-app Quit command,
+    /// close-with-CloseAction=Quit and the close prompt all funnel here. Marshals to the
+    /// application's dispatcher; ShutdownAsync's Interlocked guard makes re-entry safe.
+    /// </summary>
+    private void RequestShutdown()
+    {
+        var requester = ShutdownRequester;
+        if (requester is not null)
+        {
+            requester();
+            return;
+        }
+        var app = System.Windows.Application.Current;
+        if (app is null)
+        {
+            _logger.LogWarning("Shutdown requested but no Application instance exists");
+            return;
+        }
+        app.Dispatcher.InvokeAsync(app.Shutdown);
+    }
+
+    /// <summary>Test seam: replaces Application.Current.Shutdown() in unit tests.</summary>
+    internal Action? ShutdownRequester { get; set; }
+
+    // ---------------------------------------------------------------------
+    // Auto-update (Story 7.4)
+    // ---------------------------------------------------------------------
+
+    /// <summary>Threadpool. Never throws; surfaces results as toasts.</summary>
+    private async Task CheckForUpdatesSafeAsync(bool notifyWhenCurrent)
+    {
+        if (!_updates.IsSupported)
+        {
+            if (notifyWhenCurrent)
+            {
+                Toast("info", "Updates are only available in the installed version of AmbientFx");
+            }
+            return;
+        }
+
+        string feedUrl;
+        lock (_gate) { feedUrl = _settings.UpdateFeedUrl; }
+
+        try
+        {
+            var staged = await _updates.CheckAndStageAsync(feedUrl).ConfigureAwait(false);
+            if (staged is not null)
+            {
+                Toast("info", $"AmbientFx {staged} downloaded — it will be applied the next time AmbientFx starts");
+            }
+            else if (notifyWhenCurrent)
+            {
+                Toast("info", "You're running the latest version");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Update check failed");
+            if (notifyWhenCurrent)
+            {
+                Toast("warn", "Could not check for updates — see the log for details");
+            }
+        }
+    }
 
     private void OnHotkeyPressed(object? sender, string action)
     {
@@ -873,7 +1189,32 @@ public sealed class EngineCoordinator : IEngineCoordinator
         }
     }
 
+    /// <summary>
+    /// Close routing (Story 7.3 AC1): the window's close intercept asks us what to do.
+    /// Quit really quits; MinimizeToTray hides as before; Ask defers to an in-page modal
+    /// (the window stays open until the user answers via resolveClosePrompt).
+    /// </summary>
     private void OnControlWindowCloseRequested(object? sender, EventArgs e)
+    {
+        string closeAction;
+        lock (_gate) { closeAction = _settings.CloseAction; }
+
+        switch (closeAction)
+        {
+            case CloseActions.Quit:
+                _logger.LogInformation("Window close with CloseAction=quit — shutting down");
+                RequestShutdown();
+                break;
+            case CloseActions.MinimizeToTray:
+                HideToTray();
+                break;
+            default: // Ask
+                _windowManager.PostToControl(MessageTypes.ClosePrompt, new { });
+                break;
+        }
+    }
+
+    private void HideToTray()
     {
         _windowManager.HideControlWindow();
         if (!_trayHintShown)

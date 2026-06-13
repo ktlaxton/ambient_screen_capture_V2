@@ -4,6 +4,7 @@ obj/
 TestResults/
 *.user
 .vs/
+build/
 
 # Web
 node_modules/

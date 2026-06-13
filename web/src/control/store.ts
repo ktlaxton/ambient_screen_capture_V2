@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import type {
   ApplicationSettings,
   ConfigPayload,
+  DevicesPayload,
   MonitorInfo,
   StatusLevel,
 } from '../shared/bridge';
@@ -31,6 +32,10 @@ interface ControlState {
   onboardingOpen: boolean;
   /** Once the user finishes or skips, never auto-reopen this session. */
   onboardingDecided: boolean;
+  /** Close-choice modal (Story 7.3): shown when the engine sends closePrompt. */
+  closePromptOpen: boolean;
+  /** Ambient RGB peripherals (Story 8.1): live connection state + device list. */
+  devices: DevicesPayload;
 }
 
 interface ControlActions {
@@ -44,6 +49,9 @@ interface ControlActions {
   patchSettings: (patch: Partial<ApplicationSettings>) => void;
   openOnboarding: () => void;
   closeOnboarding: () => void;
+  openClosePrompt: () => void;
+  closeClosePrompt: () => void;
+  applyDevices: (payload: DevicesPayload) => void;
 }
 
 export type ControlStore = ControlState & ControlActions;
@@ -60,6 +68,8 @@ export const useControlStore = create<ControlStore>()((set, get) => ({
   selectedEffectId: null,
   onboardingOpen: false,
   onboardingDecided: false,
+  closePromptOpen: false,
+  devices: { connectionState: 'disabled', devices: [], providers: [] },
 
   setConnected: (connected) => set({ connected }),
 
@@ -96,4 +106,10 @@ export const useControlStore = create<ControlStore>()((set, get) => ({
   openOnboarding: () => set({ onboardingOpen: true }),
 
   closeOnboarding: () => set({ onboardingOpen: false, onboardingDecided: true }),
+
+  openClosePrompt: () => set({ closePromptOpen: true }),
+
+  closeClosePrompt: () => set({ closePromptOpen: false }),
+
+  applyDevices: (payload) => set({ devices: payload }),
 }));

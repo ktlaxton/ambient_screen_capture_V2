@@ -24,6 +24,36 @@
       "id": "aurora",
       "name": "Aurora",
       "description": "Northern-lights ribbons that ripple with bass and take their colors from the screen edges."
+    },
+    {
+      "id": "nebula",
+      "name": "Nebula",
+      "description": "Deep-space color clouds torn into glowing filaments, with stars that flare to the music."
+    },
+    {
+      "id": "fire",
+      "name": "Fire",
+      "description": "Rising flames and embers that flare with the bass — ember-ramp or screen-colored."
+    },
+    {
+      "id": "rain",
+      "name": "Rain",
+      "description": "Falling light streaks tinted by your screen, gusting harder with the bass."
+    },
+    {
+      "id": "waveform",
+      "name": "Waveform",
+      "description": "A glowing oscilloscope line tracing the music, tinted by your screen or a fixed color."
+    },
+    {
+      "id": "kaleidoscope",
+      "name": "Kaleidoscope",
+      "description": "A spinning mandala of mirrored color that pumps and blooms with the bass."
+    },
+    {
+      "id": "ripple",
+      "name": "Ripple",
+      "description": "Dark water where every beat drops an expanding ring of screen-colored light."
     }
   ]
 }

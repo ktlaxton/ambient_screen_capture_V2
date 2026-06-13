@@ -17,31 +17,20 @@ import {
   computeStops,
   createPaletteTexture,
   seedStops,
-} from './palette';
+  stopsFromPalette,
+} from '../shared/screenLut';
+import { readPaletteId } from '../shared/palettes';
+import { bandAvg, clamp, easeFactor, readBoolean, readNumber } from '../shared/params';
 import { FRAGMENT_SHADER, VERTEX_SHADER } from './shaders';
 
-const DEFAULTS = { scale: 1.4, flowSpeed: 0.35, warp: 0.6, audioDrive: 0.5 } as const;
-
-const clamp = (x: number, lo: number, hi: number): number => (x < lo ? lo : x > hi ? hi : x);
-
-function readNumber(params: EffectParams, key: string, fallback: number): number {
-  const v = params[key];
-  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
-}
-
-/** Average of bands over the fractional index range [f0, f1] (length varies 8-16). */
-function bandAvg(bands: number[], f0: number, f1: number): number {
-  const n = bands.length;
-  if (n === 0) return 0;
-  const lo = Math.round(f0 * (n - 1));
-  const hi = Math.max(lo, Math.round(f1 * (n - 1)));
-  let sum = 0;
-  for (let i = lo; i <= hi; i++) sum += clamp(bands[i] ?? 0, 0, 1);
-  return sum / (hi - lo + 1);
-}
-
-/** dt-scaled exponential smoothing factor (dt and tau in seconds). */
-const easeFactor = (dt: number, tau: number): number => 1 - Math.exp(-dt / tau);
+const DEFAULTS = {
+  scale: 1.4,
+  flowSpeed: 0.35,
+  warp: 0.6,
+  audioDrive: 0.5,
+  screenColors: true,
+  palette: 'neon',
+} as const;
 
 interface PlasmaUniforms {
   uResolution: { value: THREE.Vector2 };
@@ -85,6 +74,10 @@ class PlasmaInstance implements EffectInstance {
   private warpCur: number = DEFAULTS.warp;
   private flowSpeed: number = DEFAULTS.flowSpeed;
   private audioDrive: number = DEFAULTS.audioDrive;
+
+  // Color source (Story 7.2): live screen colors vs a named fixed palette.
+  private screenColors: boolean = DEFAULTS.screenColors;
+  private paletteId: string = DEFAULTS.palette;
 
   // Globals.
   private intensityTarget = 1;
@@ -151,7 +144,9 @@ class PlasmaInstance implements EffectInstance {
   }
 
   onFrame(frame: FramePayload): void {
-    computeStops(frame.edges, frame.dominant, this.mirror, this.stopsTarget);
+    if (this.screenColors) {
+      computeStops(frame.edges, frame.dominant, this.mirror, this.stopsTarget);
+    }
     const bands = frame.audio.bands;
     this.bassTarget = clamp(bandAvg(bands, 0, 0.25) * (0.5 + 0.5 * frame.audio.intensity), 0, 1);
     this.trebleTarget = clamp(bandAvg(bands, 0.75, 1), 0, 1);
@@ -213,6 +208,15 @@ class PlasmaInstance implements EffectInstance {
     this.warpTarget = clamp(readNumber(params, 'warp', DEFAULTS.warp), 0, 1);
     this.flowSpeed = clamp(readNumber(params, 'flowSpeed', DEFAULTS.flowSpeed), 0, 1);
     this.audioDrive = clamp(readNumber(params, 'audioDrive', DEFAULTS.audioDrive), 0, 1);
+
+    const screen = readBoolean(params, 'screenColors', DEFAULTS.screenColors);
+    const palette = readPaletteId(params, 'palette', DEFAULTS.palette);
+    if (screen !== this.screenColors || palette !== this.paletteId) {
+      this.screenColors = screen;
+      this.paletteId = palette;
+      // Fixed mode sets the targets once here; the render loop eases toward them.
+      if (!screen) stopsFromPalette(palette, this.stopsTarget);
+    }
   }
 
   setGlobals(globals: GlobalRenderSettings): void {
@@ -251,6 +255,8 @@ const plasma: EffectModule = {
     { key: 'flowSpeed', label: 'Flow speed', type: 'range', min: 0, max: 1, step: 0.01, default: DEFAULTS.flowSpeed },
     { key: 'warp', label: 'Warp', type: 'range', min: 0, max: 1, step: 0.01, default: DEFAULTS.warp },
     { key: 'audioDrive', label: 'Audio drive', type: 'range', min: 0, max: 1, step: 0.01, default: DEFAULTS.audioDrive },
+    { key: 'screenColors', label: 'Screen colors', type: 'toggle', default: DEFAULTS.screenColors },
+    { key: 'palette', label: 'Palette', type: 'palette', default: DEFAULTS.palette },
   ],
   create: (ctx: EffectContext): EffectInstance => new PlasmaInstance(ctx),
 };

@@ -98,6 +98,14 @@ function makeSettings(overrides: Partial<ApplicationSettings> = {}): Application
     presets: [],
     activePresetName: '',
     firstRunCompleted: true,
+    closeAction: 'ask',
+    updateFeedUrl: '',
+    ambientDevicesEnabled: false,
+    peripheralBrightness: 1,
+    devicePlacements: {},
+    rgbProviders: ['corsair'],
+    audioReactiveDevices: false,
+    audioReactiveDepth: 0.5,
     ...overrides,
   };
 }
@@ -194,8 +202,8 @@ describe('windowConfig adoption', () => {
     const host = makeHost('MON2');
     host.handleWindowConfig(makeWindowConfig({ effectId: 'edge-glow' }));
     host.handleWindowConfig(makeWindowConfig({ effectId: 'plasma' }));
-    const firstCanvas = registry.created[0].ctx.canvas;
-    const secondCanvas = registry.created[1].ctx.canvas;
+    const firstCanvas = (registry.created[0].ctx as { canvas: unknown }).canvas;
+    const secondCanvas = (registry.created[1].ctx as { canvas: unknown }).canvas;
     // Reusing the canvas would hand the new renderer a context-lost canvas and crash
     // three's precision probe; the swap must allocate a pristine one.
     expect(secondCanvas).not.toBe(firstCanvas);
@@ -227,6 +235,47 @@ describe('windowConfig adoption', () => {
     host.handleWindowConfig(makeWindowConfig({ effectId: 'plasma' }));
     expect(host.hasInstance()).toBe(true);
     expect(registry.plasma.create).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('layout re-push (Story 7.5)', () => {
+  const mon = (id: string, x: number, y: number, width = 1920, height = 1080) => ({
+    id,
+    name: id,
+    x,
+    y,
+    width,
+    height,
+    isPrimary: false,
+  });
+
+  it('recreates the instance when the monitor geometry changes', () => {
+    const host = makeHost('MON2');
+    host.handleWindowConfig(makeWindowConfig({ monitor: mon('MON2', 2560, 0), source: mon('MON1', 0, 0) }));
+    host.handleWindowConfig(makeWindowConfig({ monitor: mon('MON2', 2560, 400), source: mon('MON1', 0, 0) }));
+    expect(registry.edgeGlow.create).toHaveBeenCalledTimes(2);
+    expect(registry.created[0].instance.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('recreates the instance when only the SOURCE geometry changes', () => {
+    // Moving/resizing the source monitor in Windows Settings must re-orient a
+    // running effect even though the source id is unchanged.
+    const host = makeHost('MON2');
+    host.handleWindowConfig(makeWindowConfig({ monitor: mon('MON2', 2560, 0), source: mon('MON1', 0, 0) }));
+    host.handleWindowConfig(makeWindowConfig({ monitor: mon('MON2', 2560, 0), source: mon('MON1', 0, 360) }));
+    expect(registry.edgeGlow.create).toHaveBeenCalledTimes(2);
+
+    host.handleWindowConfig(
+      makeWindowConfig({ monitor: mon('MON2', 2560, 0), source: mon('MON1', 0, 360, 2560, 1440) }),
+    );
+    expect(registry.edgeGlow.create).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not recreate when geometry is unchanged', () => {
+    const host = makeHost('MON2');
+    host.handleWindowConfig(makeWindowConfig({ monitor: mon('MON2', 2560, 0), source: mon('MON1', 0, 0) }));
+    host.handleWindowConfig(makeWindowConfig({ monitor: mon('MON2', 2560, 0), source: mon('MON1', 0, 0) }));
+    expect(registry.edgeGlow.create).toHaveBeenCalledTimes(1);
   });
 });
 

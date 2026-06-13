@@ -306,6 +306,7 @@ public sealed class EngineCoordinatorTests
     public async Task SavePreset_BlankName_IsIgnored()
     {
         var h = new CoordinatorHarness();
+        h.InitialSettings.FirstRunCompleted = true; // suppress first-run preset seeding
         await h.StartAsync();
 
         h.Send(CommandTypes.SavePreset, new { name = "   " });
@@ -543,6 +544,7 @@ public sealed class EngineCoordinatorTests
     public async Task Hotkey_NextPreset_WithNoPresets_IsANoOp()
     {
         var h = new CoordinatorHarness();
+        h.InitialSettings.FirstRunCompleted = true; // suppress first-run preset seeding
         await h.StartAsync();
         var postsBefore = h.AllPosts.Length;
 

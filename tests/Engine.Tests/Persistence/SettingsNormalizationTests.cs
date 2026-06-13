@@ -72,6 +72,71 @@ public sealed class SettingsNormalizationTests : IDisposable
     }
 
     [Fact]
+    public async Task PeripheralBrightness_is_clamped_and_nan_repaired()
+    {
+        var s = await LoadFromJson("""{"peripheralBrightness":7.5}""");
+        Assert.Equal(1f, s.PeripheralBrightness);
+
+        s = await LoadFromJson("""{"peripheralBrightness":"NaN"}""");
+        Assert.Equal(1f, s.PeripheralBrightness);
+
+        s = await LoadFromJson("""{"peripheralBrightness":-2.0}""");
+        Assert.Equal(0f, s.PeripheralBrightness);
+    }
+
+    [Fact]
+    public async Task Missing_ambient_device_keys_default_cleanly()
+    {
+        // Forward/back compat (Story 8.1 AC7): a pre-Epic-8 settings.json has neither key.
+        var s = await LoadFromJson("""{"isEnabled":true}""");
+        Assert.False(s.AmbientDevicesEnabled);
+        Assert.Equal(1f, s.PeripheralBrightness);
+        Assert.Empty(s.DevicePlacements);
+        Assert.Equal(new[] { "corsair" }, s.RgbProviders); // pre-8.3 file → Corsair default
+        Assert.False(s.AudioReactiveDevices);
+        Assert.Equal(0.5f, s.AudioReactiveDepth);
+    }
+
+    [Fact]
+    public async Task Rgb_provider_list_is_cleaned_but_an_explicit_empty_list_is_respected()
+    {
+        var s = await LoadFromJson("""{"rgbProviders":["corsair","corsair"," ","razer",null]}""");
+        Assert.Equal(new[] { "corsair", "razer" }, s.RgbProviders);
+
+        s = await LoadFromJson("""{"rgbProviders":[]}""");
+        Assert.Empty(s.RgbProviders); // the user disabled every vendor on purpose
+
+        s = await LoadFromJson("""{"rgbProviders":null,"audioReactiveDepth":42.0}""");
+        Assert.Equal(new[] { "corsair" }, s.RgbProviders); // explicit null repaired to default
+        Assert.Equal(1f, s.AudioReactiveDepth); // clamped
+    }
+
+    [Fact]
+    public async Task Device_placements_are_repaired_not_rejected()
+    {
+        var s = await LoadFromJson(
+            """
+            {"devicePlacements":{
+              "corsair:ok":{"anchor":"left","flip":true,"brightness":0.5,"enabled":false},
+              "corsair:badAnchor":{"anchor":"sideways","brightness":42.0},
+              "corsair:nullEntry":null,
+              " ":{"anchor":"left"}
+            }}
+            """);
+        Assert.Equal(2, s.DevicePlacements.Count); // null entry and blank key dropped
+
+        var ok = s.DevicePlacements["corsair:ok"];
+        Assert.Equal("left", ok.Anchor);
+        Assert.True(ok.Flip);
+        Assert.Equal(0.5f, ok.Brightness);
+        Assert.False(ok.Enabled);
+
+        var repaired = s.DevicePlacements["corsair:badAnchor"];
+        Assert.Equal("auto", repaired.Anchor); // invalid anchor falls back to Auto
+        Assert.Equal(1f, repaired.Brightness); // clamped
+    }
+
+    [Fact]
     public async Task Null_entries_in_target_monitor_ids_are_dropped()
     {
         var s = await LoadFromJson("""{"targetMonitorIds":[null,"","\\\\?\\DISPLAY#X"]}""");

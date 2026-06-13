@@ -11,6 +11,10 @@ public static class MessageTypes
     public const string Monitors = "monitors";
     public const string WindowConfig = "windowConfig";
     public const string WindowState = "windowState";
+    /// <summary>Tells the control page to show the close-choice modal (Story 7.3).</summary>
+    public const string ClosePrompt = "closePrompt";
+    /// <summary>Ambient RGB peripheral state for the control UI (Story 8.1).</summary>
+    public const string Devices = "devices";
 }
 
 /// <summary>Outgoing envelope: serializes to {"type":"...","payload":{...}}.</summary>
@@ -69,6 +73,21 @@ public sealed class ConfigPayload
     public ApplicationSettings Settings { get; set; } = new();
     public bool FirstRun { get; set; }
     public string AppVersion { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Ambient RGB peripheral state (Story 8.1): live connection state + the discovered device
+/// list for the control UI. Pushed on every change and on requestState.
+/// </summary>
+public sealed class DevicesPayload
+{
+    /// <summary>"disabled" | "connecting" | "connected" | "icueNotFound" | "refused" | "noDevices" | "error"</summary>
+    public string ConnectionState { get; set; } = "disabled";
+
+    public List<AmbientFx.Devices.AmbientDeviceInfo> Devices { get; set; } = new();
+
+    /// <summary>Per-vendor outcomes from the last connect (Story 8.3); empty when not connected.</summary>
+    public List<AmbientFx.Devices.RgbProviderStatus> Providers { get; set; } = new();
 }
 
 /// <summary>Control-window native state, pushed on every change so the custom title bar's

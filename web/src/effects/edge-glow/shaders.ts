@@ -15,14 +15,24 @@ void main() {
  * Fragment shader. Requires define TAPS (blur taps per side: 2 preview, 3 full).
  * Edge colors arrive as a zones x 4 RGBA DataTexture (rows: top, bottom, left,
  * right), LinearFilter for free intra-zone blending.
+ *
+ * Position-aware mapping (Story 7.5): each entry edge carries an affine map
+ * `e = s * uScale + uOffset` from the target-edge coordinate s onto the source
+ * edge. e in [0,1] is the physically aligned span; beyond it the color clamps
+ * to the nearest end zone and brightness eases down to a corner-spill floor.
+ * Up to 2 edges blend for diagonal (corner) placements.
  */
 export const EDGE_GLOW_FS = /* glsl */ `
 varying vec2 vUv;
 
 uniform sampler2D uTex;
-uniform int   uMode;     // 0 = directional spill, 1 = ambient halo (all 4 sides)
-uniform int   uEntry;    // directional: 0=left 1=right 2=bottom 3=top (window side light enters from)
-uniform float uRow;      // directional: texture v of the source edge row to sample
+uniform int   uMode;      // 0 = directional spill, 1 = ambient halo (all 4 sides)
+uniform int   uEdgeCount; // directional: 1 side neighbor, 2 corner blend
+uniform int   uEntry[2];  // window side light enters from: 0=left 1=right 2=bottom 3=top
+uniform float uRow[2];    // texture v of the source edge row feeding each entry
+uniform float uScale[2];  // span map: e = s * scale + offset (source-edge coords)
+uniform float uOffset[2];
+uniform float uWeight[2]; // contribution weight (corner blends sum to 1)
 uniform float uZones;    // zone count (texture width)
 uniform float uReach;    // 0.2..1 — how far light penetrates
 uniform float uSpread;   // 0.1..1 — wedge softness / diffusion
@@ -36,6 +46,12 @@ uniform float uTime;     // seconds
 
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 const vec3 BASE_SRGB = vec3(0.015686, 0.023529, 0.047059); // #04060c blue-black floor
+
+// Beyond the aligned span: ease brightness down over SPAN_FADE of the target
+// edge to a SPAN_FLOOR glow (light wrapping a corner — never a hard cut, and
+// never zero, so fully-out-of-span corner blends still read; AC2).
+const float SPAN_FADE = 0.30;
+const float SPAN_FLOOR = 0.30;
 
 float hash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -72,14 +88,15 @@ vec3 boostColor(vec3 c) {
 
 // Gaussian-weighted taps along the edge row; blur radius grows with travel
 // distance so adjacent zones bleed softly (frosted-glass diffusion).
-vec3 sampleEdge(float s, float rowV, float blur) {
+// e is in source-edge coords; per-tap clamp = nearest-end color beyond the span.
+vec3 sampleEdge(float e, float rowV, float blur) {
   vec3 acc = vec3(0.0);
   float wsum = 0.0;
   for (int i = -TAPS; i <= TAPS; i++) {
     float o = float(i) / float(TAPS);
     float w = exp(-2.5 * o * o);
-    float ss = clamp(s + o * blur, 0.0, 1.0);
-    float u = (0.5 + ss * (uZones - 1.0)) / uZones; // map onto texel centers
+    float ee = clamp(e + o * blur, 0.0, 1.0);
+    float u = (0.5 + ee * (uZones - 1.0)) / uZones; // map onto texel centers
     acc += srgbToLin(texture2D(uTex, vec2(u, rowV)).rgb) * w;
     wsum += w;
   }
@@ -87,8 +104,12 @@ vec3 sampleEdge(float s, float rowV, float blur) {
 }
 
 // One entry side's light field. d: 0 at the entry edge -> 1 at the far side.
-// s: 0..1 along the edge (matches zone ordering in the texture row).
-vec3 wedge(float d, float s, float rowV) {
+// s: 0..1 along the target edge; scl/off map it onto the source edge span.
+vec3 wedge(float d, float s, float rowV, float scl, float off) {
+  float e = s * scl + off; // aligned position on the source edge
+  float over = max(max(-e, e - 1.0), 0.0) / max(scl, 1e-4); // overrun, target-edge units
+  float span = mix(1.0, SPAN_FLOOR, smoothstep(0.0, SPAN_FADE, over));
+
   // bass expands the reach slightly (classy, not strobing)
   float reach = clamp(uReach * (1.0 + uBass * uAudioPulse * 0.35 * uIntensity), 0.08, 1.5);
 
@@ -100,29 +121,33 @@ vec3 wedge(float d, float s, float rowV) {
   // hybrid exponential / inverse-square falloff, windowed so it terminates
   float fall = mix(1.0 / (1.0 + 8.0 * x * x), exp(-2.8 * x), 0.55);
   fall *= 1.0 - smoothstep(0.7, 1.45, x);
+  fall *= span;
   if (fall < 0.001) return vec3(0.0);
 
-  float blur = uSpread * (0.03 + 0.30 * d);
-  return boostColor(sampleEdge(s, rowV, blur)) * fall;
+  float blur = uSpread * (0.03 + 0.30 * d) * scl; // target-space blur -> source units
+  return boostColor(sampleEdge(e, rowV, blur)) * fall;
 }
 
 void main() {
   vec3 light = vec3(0.0);
 
   if (uMode == 0) {
-    float d; float s;
-    if (uEntry == 0)      { d = vUv.x;       s = 1.0 - vUv.y; } // from left,   zones top->bottom
-    else if (uEntry == 1) { d = 1.0 - vUv.x; s = 1.0 - vUv.y; } // from right,  zones top->bottom
-    else if (uEntry == 2) { d = vUv.y;       s = vUv.x;       } // from bottom, zones left->right
-    else                  { d = 1.0 - vUv.y; s = vUv.x;       } // from top,    zones left->right
-    light = wedge(d, s, uRow);
+    for (int i = 0; i < 2; i++) {
+      if (i >= uEdgeCount) break;
+      float d; float s;
+      if (uEntry[i] == 0)      { d = vUv.x;       s = 1.0 - vUv.y; } // from left,   s top->bottom
+      else if (uEntry[i] == 1) { d = 1.0 - vUv.x; s = 1.0 - vUv.y; } // from right,  s top->bottom
+      else if (uEntry[i] == 2) { d = vUv.y;       s = vUv.x;       } // from bottom, s left->right
+      else                     { d = 1.0 - vUv.y; s = vUv.x;       } // from top,    s left->right
+      light += wedge(d, s, uRow[i], uScale[i], uOffset[i]) * uWeight[i];
+    }
   } else {
     // ambient halo: all four window sides glow inward with their source edges
     // (rows: 0 top, 1 bottom, 2 left, 3 right -> v centers .125/.375/.625/.875)
-    light  = wedge(1.0 - vUv.y, vUv.x,       0.125) * 0.85;
-    light += wedge(vUv.y,       vUv.x,       0.375) * 0.85;
-    light += wedge(vUv.x,       1.0 - vUv.y, 0.625) * 0.85;
-    light += wedge(1.0 - vUv.x, 1.0 - vUv.y, 0.875) * 0.85;
+    light  = wedge(1.0 - vUv.y, vUv.x,       0.125, 1.0, 0.0) * 0.85;
+    light += wedge(vUv.y,       vUv.x,       0.375, 1.0, 0.0) * 0.85;
+    light += wedge(vUv.x,       1.0 - vUv.y, 0.625, 1.0, 0.0) * 0.85;
+    light += wedge(1.0 - vUv.x, 1.0 - vUv.y, 0.875, 1.0, 0.0) * 0.85;
   }
 
   // gentle luminance breathing with overall audio intensity (~5-15%)

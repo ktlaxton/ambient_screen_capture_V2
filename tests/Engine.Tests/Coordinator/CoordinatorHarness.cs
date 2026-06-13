@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AmbientFx.Bridge;
 using AmbientFx.Capture;
+using AmbientFx.Devices;
 using AmbientFx.Hosting;
 using AmbientFx.Models;
 using AmbientFx.Processing;
@@ -34,6 +35,9 @@ internal sealed class CoordinatorHarness
     public Mock<IAudioCaptureService> Audio { get; } = new();
     public Mock<IDataProcessingService> Processing { get; } = new();
     public Mock<IWebViewWindowManager> WindowManager { get; } = new();
+    /// <summary>Defaults to IsSupported=false so no launch-time update check fires in tests.</summary>
+    public Mock<IUpdateService> Updates { get; } = new();
+    public Mock<IAmbientDeviceService> AmbientDevices { get; } = new();
 
     /// <summary>The instance LoadAsync hands to the coordinator; mutate before StartAsync.</summary>
     public ApplicationSettings InitialSettings { get; } = new();
@@ -66,6 +70,9 @@ internal sealed class CoordinatorHarness
         Hotkeys.Setup(h => h.Apply(It.IsAny<IReadOnlyDictionary<string, string>>()))
             .Returns(Array.Empty<string>());
 
+        // Moq would otherwise return a null snapshot and crash BuildDevicesPayload.
+        AmbientDevices.SetupGet(d => d.Snapshot).Returns(new AmbientDevicesSnapshot());
+
         WindowManager.Setup(w => w.InitializeAsync()).Returns(Task.CompletedTask);
         WindowManager.Setup(w => w.ShowControlWindowAsync()).Returns(Task.CompletedTask);
         WindowManager.Setup(w => w.SyncEffectWindowsAsync(It.IsAny<IReadOnlyList<EffectWindowSpec>>()))
@@ -91,6 +98,8 @@ internal sealed class CoordinatorHarness
             Audio.Object,
             Processing.Object,
             WindowManager.Object,
+            Updates.Object,
+            AmbientDevices.Object,
             NullLogger<EngineCoordinator>.Instance);
     }
 

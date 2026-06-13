@@ -4,11 +4,17 @@
 // Esc clears the binding.
 // ============================================================================
 import { useState } from 'react';
-import type { ApplicationSettings } from '../../shared/bridge';
+import type { ApplicationSettings, CloseAction } from '../../shared/bridge';
 import { useControlStore } from '../store';
-import { setAutostart, setHotkey } from '../bridgeGlue';
-import { Toggle } from './controls';
+import { checkForUpdates, setAutostart, setCloseAction, setHotkey, quitApp } from '../bridgeGlue';
+import { Button, Select, Toggle } from './controls';
 import './SettingsPanel.css';
+
+const CLOSE_ACTION_OPTIONS: { value: CloseAction; label: string }[] = [
+  { value: 'ask', label: 'Ask each time' },
+  { value: 'minimizeToTray', label: 'Minimize to tray' },
+  { value: 'quit', label: 'Quit AmbientFx' },
+];
 
 const HOTKEY_ACTIONS: { action: string; label: string; sub: string }[] = [
   { action: 'toggleEnabled', label: 'Toggle effects', sub: 'master on / off from anywhere' },
@@ -97,6 +103,21 @@ export function SettingsPanel({ settings }: { settings: ApplicationSettings }) {
         </div>
       </div>
 
+      <div className="form-row">
+        <div className="row-label">
+          <span className="name">When I close the window</span>
+          <span className="sub">closing from the taskbar or the X button</span>
+        </div>
+        <div className="row-control">
+          <Select
+            value={settings.closeAction ?? 'ask'}
+            options={CLOSE_ACTION_OPTIONS}
+            onChange={(v) => setCloseAction(v as CloseAction)}
+            ariaLabel="When I close the window"
+          />
+        </div>
+      </div>
+
       {HOTKEY_ACTIONS.map(({ action, label, sub }) => (
         <div className="form-row" key={action}>
           <div className="row-label">
@@ -108,6 +129,30 @@ export function SettingsPanel({ settings }: { settings: ApplicationSettings }) {
           </div>
         </div>
       ))}
+
+      <div className="form-row">
+        <div className="row-label">
+          <span className="name">Updates</span>
+          <span className="sub">downloaded in the background, applied on next start</span>
+        </div>
+        <div className="row-control">
+          <Button size="sm" onClick={checkForUpdates} title="Check the release feed now">
+            Check for updates
+          </Button>
+        </div>
+      </div>
+
+      <div className="form-row">
+        <div className="row-label">
+          <span className="name">Quit AmbientFx</span>
+          <span className="sub">stop everything — no background process remains</span>
+        </div>
+        <div className="row-control">
+          <Button variant="danger" size="sm" onClick={quitApp} title="Fully exit AmbientFx">
+            Quit
+          </Button>
+        </div>
+      </div>
 
       <div className="settings-footer">
         AmbientFx {appVersion || 'dev'} · {connected ? 'native engine' : 'browser simulator'}

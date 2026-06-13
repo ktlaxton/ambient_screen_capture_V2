@@ -10,11 +10,13 @@ export interface GlobalRenderSettings {
   brightness: number;
 }
 
-/** Declarative parameter definition — the control UI auto-generates controls from these. */
+/** Declarative parameter definition — the control UI auto-generates controls from these.
+ *  'color' defaults/values are '#rrggbb' hex strings; 'palette' defaults/values are
+ *  palette ids from effects/shared/palettes (the UI renders swatches from that registry). */
 export interface ParamDef {
   key: string;
   label: string;
-  type: 'range' | 'select' | 'toggle';
+  type: 'range' | 'select' | 'toggle' | 'color' | 'palette';
   /** range only */
   min?: number;
   max?: number;

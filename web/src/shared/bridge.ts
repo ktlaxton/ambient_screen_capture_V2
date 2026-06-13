@@ -52,6 +52,9 @@ export interface MonitorInfo {
 
 export type EffectParams = Record<string, number | string | boolean>;
 
+/** What closing the control window does (Story 7.3). 'ask' shows a one-time choice. */
+export type CloseAction = 'ask' | 'quit' | 'minimizeToTray';
+
 export interface Preset {
   name: string;
   snapshot: ApplicationSettings;
@@ -76,6 +79,73 @@ export interface ApplicationSettings {
   presets: Preset[];
   activePresetName: string;
   firstRunCompleted: boolean;
+  closeAction: CloseAction;
+  /** Velopack update feed (Story 7.4); blank = the project's GitHub Releases feed. */
+  updateFeedUrl: string;
+  /** Master toggle for ambient RGB peripherals (Epic 8 / Story 8.1). */
+  ambientDevicesEnabled: boolean;
+  /** Peripheral LED brightness 0..1, separate from the on-screen brightness. */
+  peripheralBrightness: number;
+  /** Per-device placement overrides keyed by stable device id (Story 8.2); no entry = Auto. */
+  devicePlacements: Record<string, DevicePlacement>;
+  /** Enabled RGB vendor providers (Story 8.3), e.g. ["corsair"]. Others are opt-in. */
+  rgbProviders: string[];
+  /** Audio-reactive peripheral layer on/off (Story 8.3). */
+  audioReactiveDevices: boolean;
+  /** Audio-reactive depth 0..1: 0 = no effect, 1 = silence goes dark. */
+  audioReactiveDepth: number;
+}
+
+/** Where a device sits relative to the screen (Story 8.2). auto/behind = nearest-edge mapping. */
+export type DeviceAnchor = 'auto' | 'left' | 'right' | 'above' | 'below' | 'behind' | 'surround';
+
+/** Per-device placement + tuning (Story 8.2). */
+export interface DevicePlacement {
+  anchor: DeviceAnchor;
+  /** Reverses zone order along the fed edge (strips mounted backwards). */
+  flip: boolean;
+  /** Per-device multiplier 0..1 on top of the global peripheral brightness. */
+  brightness: number;
+  /** False excludes the device (its LEDs go dark) without disabling the feature. */
+  enabled: boolean;
+}
+
+/** Ambient peripheral connection state (Story 8.1). These are normal states, not errors. */
+export type DeviceConnectionState =
+  | 'disabled'
+  | 'connecting'
+  | 'connected'
+  | 'icueNotFound'
+  | 'refused'
+  | 'noDevices'
+  | 'error';
+
+/** One discovered RGB peripheral for the read-only device list. */
+export interface AmbientDeviceInfo {
+  id: string;
+  name: string;
+  /** Vendor SDK device class, e.g. "Keyboard", "Mouse", "LedStripe". */
+  type: string;
+  ledCount: number;
+}
+
+/** One vendor provider's outcome in the last connect (Story 8.3). */
+export type RgbProviderState = 'connected' | 'unavailable' | 'refused' | 'error';
+
+export interface RgbProviderStatus {
+  /** Stable provider key, e.g. "corsair", "razer". */
+  key: string;
+  name: string;
+  state: RgbProviderState;
+  deviceCount: number;
+}
+
+/** Ambient RGB peripheral state, pushed on every change and on requestState (Story 8.1). */
+export interface DevicesPayload {
+  connectionState: DeviceConnectionState;
+  devices: AmbientDeviceInfo[];
+  /** Per-vendor outcomes from the last connect (Story 8.3); empty when not connected. */
+  providers: RgbProviderStatus[];
 }
 
 export interface ConfigPayload {
@@ -112,6 +182,10 @@ export interface EngineMessageMap {
   monitors: MonitorsPayload;
   windowConfig: WindowConfigPayload;
   windowState: WindowStatePayload;
+  /** The user closed the window while closeAction is 'ask' — show the choice modal (Story 7.3). */
+  closePrompt: Record<string, never>;
+  /** Ambient RGB peripheral connection state + device list (Story 8.1). */
+  devices: DevicesPayload;
 }
 
 /** Web -> engine commands. */
@@ -140,9 +214,29 @@ export interface CommandMap {
   requestState: Record<string, never>;
   /** Custom-chrome window controls for the control window. */
   windowCommand: { action: 'minimize' | 'maximize' | 'restore' | 'close' };
+  /** Fully terminate the app (Story 7.3) — same path as the tray Exit item. */
+  quitApp: Record<string, never>;
+  /** Persisted close-the-window behavior. */
+  setCloseAction: { action: CloseAction };
+  /** The user's answer to the closePrompt modal. */
+  resolveClosePrompt: { action: 'quit' | 'minimizeToTray'; remember: boolean };
+  /** Manual update check (Story 7.4); results come back as status toasts. */
+  checkForUpdates: Record<string, never>;
   completeOnboarding: Record<string, never>;
   /** Web layer fatal/runtime error report so the engine can log + toast (NFR5/AC7). */
   reportError: { source: string; message: string };
+  /** Ambient RGB peripherals (Stories 8.1/8.3). Partial update — omitted fields are left unchanged. */
+  setDevices: { enabled?: boolean; brightness?: number; audioReactive?: boolean; audioDepth?: number };
+  /** Replaces the enabled RGB vendor provider set (Story 8.3); the engine reconnects. */
+  setRgbProviders: { providers: string[] };
+  /** Per-device placement/tuning (Story 8.2). Partial update against the stored placement. */
+  setDevicePlacement: {
+    deviceId: string;
+    anchor?: DeviceAnchor;
+    flip?: boolean;
+    brightness?: number;
+    enabled?: boolean;
+  };
 }
 
 export type EngineMessageType = keyof EngineMessageMap;

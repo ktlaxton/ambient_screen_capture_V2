@@ -8,17 +8,26 @@
 //   control.html?firstrun=1          -> forces the onboarding flow
 import { MessageHub } from './bridge';
 import type {
+  AmbientDeviceInfo,
   ApplicationSettings,
   Bridge,
   CommandMap,
   CommandType,
+  DevicesPayload,
   EngineMessageMap,
   EngineMessageType,
   FramePayload,
   MonitorInfo,
   RGB,
+  RgbProviderStatus,
   WindowConfigPayload,
 } from './bridge';
+
+const SIM_DEVICES: AmbientDeviceInfo[] = [
+  { id: '0:K95 RGB Platinum (sim)', name: 'K95 RGB Platinum (sim)', type: 'Keyboard', ledCount: 108 },
+  { id: '1:Dark Core RGB Pro (sim)', name: 'Dark Core RGB Pro (sim)', type: 'Mouse', ledCount: 4 },
+  { id: '2:LS100 Light Strip (sim)', name: 'LS100 Light Strip (sim)', type: 'LedStripe', ledCount: 27 },
+];
 
 const SIM_MONITORS: MonitorInfo[] = [
   { id: '\\\\.\\DISPLAY1', name: 'Primary 1440p (sim)', x: 0, y: 0, width: 2560, height: 1440, isPrimary: true },
@@ -46,6 +55,14 @@ export function defaultSimSettings(): ApplicationSettings {
     presets: [],
     activePresetName: '',
     firstRunCompleted: true,
+    closeAction: 'ask',
+    updateFeedUrl: '',
+    ambientDevicesEnabled: false,
+    peripheralBrightness: 1,
+    devicePlacements: {},
+    rgbProviders: ['corsair'],
+    audioReactiveDevices: false,
+    audioReactiveDepth: 0.5,
   };
 }
 
@@ -111,12 +128,43 @@ export function createSimulatorBridge(): Bridge {
       appVersion: '0.0.0-simulator',
     });
 
+  // Coarse fallback relation, mirroring MonitorLayout.ComputeRelation (effects
+  // primarily read the rects; this keeps the payload self-consistent).
+  const relationFor = (source: MonitorInfo, target: MonitorInfo): WindowConfigPayload['relation'] => {
+    if (source.id === target.id) return 'none';
+    const ndx = (target.x + target.width / 2 - (source.x + source.width / 2)) / ((source.width + target.width) / 2);
+    const ndy = (target.y + target.height / 2 - (source.y + source.height / 2)) / ((source.height + target.height) / 2);
+    if (Math.abs(ndx) < 0.05 && Math.abs(ndy) < 0.05) return 'none';
+    if (Math.abs(ndx) >= Math.abs(ndy)) return ndx > 0 ? 'right' : 'left';
+    return ndy > 0 ? 'below' : 'above';
+  };
+
   const windowConfig = (): WindowConfigPayload => {
     const monitorId = urlParams.get('monitorId') ?? SIM_MONITORS[1].id;
     const monitor = SIM_MONITORS.find((m) => m.id === monitorId) ?? SIM_MONITORS[1];
+    const source = SIM_MONITORS.find((m) => m.id === settings.sourceMonitorId) ?? SIM_MONITORS[0];
     const effectId =
       urlParams.get('effectId') ?? settings.effectByMonitorId[monitor.id] ?? settings.activeEffectId;
-    return { monitorId: monitor.id, effectId, monitor, source: SIM_MONITORS[0], relation: 'right' };
+    return { monitorId: monitor.id, effectId, monitor, source, relation: relationFor(source, monitor) };
+  };
+
+  // Peripherals mirror the engine: connected only while the master power AND the
+  // peripherals toggle are both on (the device service runs with the pipeline).
+  // Corsair is the only simulated vendor; other enabled providers report unavailable.
+  const devicesPayload = (): DevicesPayload => {
+    if (!settings.isEnabled || !settings.ambientDevicesEnabled) {
+      return { connectionState: 'disabled', devices: [], providers: [] };
+    }
+    const corsairOn = settings.rgbProviders.includes('corsair');
+    const providers = settings.rgbProviders.map((key) => ({
+      key,
+      name: key === 'corsair' ? 'Corsair iCUE' : key,
+      state: (key === 'corsair' ? 'connected' : 'unavailable') as RgbProviderStatus['state'],
+      deviceCount: key === 'corsair' ? SIM_DEVICES.length : 0,
+    }));
+    return corsairOn
+      ? { connectionState: 'connected', devices: clone(SIM_DEVICES), providers }
+      : { connectionState: 'icueNotFound', devices: [], providers };
   };
 
   const start = typeof performance !== 'undefined' ? performance.now() : 0;
@@ -136,16 +184,53 @@ export function createSimulatorBridge(): Bridge {
         pushConfig();
         emit('monitors', { monitors: clone(SIM_MONITORS) });
         emit('windowConfig', windowConfig());
+        emit('devices', devicesPayload());
         break;
       }
       case 'setEnabled': {
         settings.isEnabled = (payload as CommandMap['setEnabled']).enabled;
+        pushConfig();
+        emit('devices', devicesPayload());
+        break;
+      }
+      case 'setDevices': {
+        const cmd = payload as CommandMap['setDevices'];
+        if (cmd.enabled !== undefined) settings.ambientDevicesEnabled = cmd.enabled;
+        if (cmd.brightness !== undefined) settings.peripheralBrightness = cmd.brightness;
+        if (cmd.audioReactive !== undefined) settings.audioReactiveDevices = cmd.audioReactive;
+        if (cmd.audioDepth !== undefined) settings.audioReactiveDepth = cmd.audioDepth;
+        pushConfig();
+        emit('devices', devicesPayload());
+        break;
+      }
+      case 'setRgbProviders': {
+        settings.rgbProviders = [...(payload as CommandMap['setRgbProviders']).providers];
+        pushConfig();
+        emit('devices', devicesPayload());
+        break;
+      }
+      case 'setDevicePlacement': {
+        const cmd = payload as CommandMap['setDevicePlacement'];
+        const current = settings.devicePlacements[cmd.deviceId] ?? {
+          anchor: 'auto',
+          flip: false,
+          brightness: 1,
+          enabled: true,
+        };
+        settings.devicePlacements[cmd.deviceId] = {
+          ...current,
+          ...(cmd.anchor !== undefined && { anchor: cmd.anchor }),
+          ...(cmd.flip !== undefined && { flip: cmd.flip }),
+          ...(cmd.brightness !== undefined && { brightness: cmd.brightness }),
+          ...(cmd.enabled !== undefined && { enabled: cmd.enabled }),
+        };
         pushConfig();
         break;
       }
       case 'setSourceMonitor': {
         settings.sourceMonitorId = (payload as CommandMap['setSourceMonitor']).monitorId;
         pushConfig();
+        emit('windowConfig', windowConfig()); // source moved -> layout-aware effects re-orient
         break;
       }
       case 'setTargetMonitors': {
@@ -229,7 +314,30 @@ export function createSimulatorBridge(): Bridge {
         break;
       }
       case 'windowCommand': {
-        console.info('[simulator] windowCommand:', (payload as CommandMap['windowCommand']).action);
+        const action = (payload as CommandMap['windowCommand']).action;
+        console.info('[simulator] windowCommand:', action);
+        // Mirror the engine's close routing so the prompt is testable in a browser.
+        if (action === 'close' && settings.closeAction === 'ask') emit('closePrompt', {});
+        break;
+      }
+      case 'quitApp': {
+        emit('status', { level: 'info', message: 'Simulator: quitApp would terminate the engine.' });
+        break;
+      }
+      case 'checkForUpdates': {
+        emit('status', { level: 'info', message: 'Simulator: updates are only available in the installed app.' });
+        break;
+      }
+      case 'setCloseAction': {
+        settings.closeAction = (payload as CommandMap['setCloseAction']).action;
+        pushConfig();
+        break;
+      }
+      case 'resolveClosePrompt': {
+        const cmd = payload as CommandMap['resolveClosePrompt'];
+        if (cmd.remember) settings.closeAction = cmd.action;
+        pushConfig();
+        emit('status', { level: 'info', message: `Simulator: close resolved as ${cmd.action}.` });
         break;
       }
       case 'reportError': {

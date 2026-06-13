@@ -12,10 +12,19 @@
     <UseWindowsForms>true</UseWindowsForms>
     <PlatformTarget>x64</PlatformTarget>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Packaging (Story 7.4): version stamped into the assembly + Velopack release;
+         build.ps1 overrides with -p:Version=x.y.z when cutting a release. -->
+    <Version>2.0.0</Version>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <!-- Velopack hooks run before WPF spins up — see Program.cs. -->
+    <StartupObject>AmbientFx.Program</StartupObject>
   </PropertyGroup>
 
   <ItemGroup>
     <None Include="wwwroot\**" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Corsair iCUE SDK v4 native client (redist from CorsairOfficial/cue-sdk v4.0.84).
+         RGB.NET's Corsair provider probes x64\iCUESDK.x64_2019.dll relative to the app. -->
+    <None Include="native\x64\iCUESDK.x64_2019.dll" TargetPath="x64\iCUESDK.x64_2019.dll" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,11 +32,24 @@
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.9" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
     <PackageReference Include="NAudio.Core" Version="2.3.0" />
+    <!-- RGB.NET is LGPL-2.1: keep it unmodified and dynamically linked via NuGet
+         (see THIRD-PARTY-NOTICES.md; installer review tracked in Story 8.4). -->
+    <PackageReference Include="RGB.NET.Core" Version="3.2.0" />
+    <PackageReference Include="RGB.NET.Devices.Corsair" Version="3.2.0" />
+    <!-- Additional vendors (Story 8.3) — opt-in at runtime, skipped when the vendor's
+         software/SDK is absent. Several need vendor-installed natives (Synapse, G HUB…). -->
+    <PackageReference Include="RGB.NET.Devices.Asus" Version="3.2.0" />
+    <PackageReference Include="RGB.NET.Devices.Logitech" Version="3.2.0" />
+    <PackageReference Include="RGB.NET.Devices.Msi" Version="3.2.0" />
+    <PackageReference Include="RGB.NET.Devices.Razer" Version="3.2.0" />
+    <PackageReference Include="RGB.NET.Devices.SteelSeries" Version="3.2.0" />
+    <PackageReference Include="RGB.NET.Devices.Wooting" Version="3.2.0" />
     <PackageReference Include="NAudio.Wasapi" Version="2.3.0" />
     <PackageReference Include="Serilog" Version="4.3.1" />
     <PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageReference Include="Serilog.Sinks.Debug" Version="3.0.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageReference Include="Velopack" Version="1.2.0" />
     <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
   </ItemGroup>
 

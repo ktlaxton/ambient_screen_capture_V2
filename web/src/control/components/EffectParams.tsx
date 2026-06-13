@@ -6,6 +6,7 @@
 import { useMemo } from 'react';
 import { effects, effectsById } from '../../effects/registry';
 import type { ParamDef } from '../../effects/types';
+import { PALETTES, paletteCssGradient } from '../../effects/shared/palettes';
 import { useControlStore } from '../store';
 import { resolvedEffectParams, setEffectParam, resetEffectParams } from '../bridgeGlue';
 import { Slider, Select, Toggle, Button } from './controls';
@@ -60,6 +61,52 @@ function ParamRow({
             onChange={(v) => setEffectParam(effectId, def.key, v)}
             ariaLabel={def.label}
           />
+        </div>
+      </div>
+    );
+  }
+
+  if (def.type === 'color') {
+    const hex = typeof value === 'string' ? value : String(def.default);
+    return (
+      <div className="form-row">
+        <div className="row-label">
+          <span className="name">{def.label}</span>
+        </div>
+        <div className="row-control">
+          <input
+            type="color"
+            className="ctl-color"
+            value={hex}
+            aria-label={def.label}
+            onChange={(e) => setEffectParam(effectId, def.key, e.target.value)}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (def.type === 'palette') {
+    const current = typeof value === 'string' ? value : String(def.default);
+    return (
+      <div className="form-row">
+        <div className="row-label">
+          <span className="name">{def.label}</span>
+        </div>
+        <div className="row-control ctl-palette" role="radiogroup" aria-label={def.label}>
+          {PALETTES.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              role="radio"
+              aria-checked={p.id === current}
+              aria-label={p.label}
+              title={p.label}
+              className={`ctl-palette-swatch${p.id === current ? ' active' : ''}`}
+              style={{ background: paletteCssGradient(p.id) }}
+              onClick={() => setEffectParam(effectId, def.key, p.id)}
+            />
+          ))}
         </div>
       </div>
     );

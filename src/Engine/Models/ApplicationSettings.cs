@@ -33,6 +33,33 @@ public class ApplicationSettings
     public string ActivePresetName { get; set; } = string.Empty;
     public bool FirstRunCompleted { get; set; }
 
+    /// <summary>What closing the control window does (Story 7.3). See <see cref="CloseActions"/>.</summary>
+    public string CloseAction { get; set; } = CloseActions.Ask;
+
+    /// <summary>Velopack update feed (Story 7.4): a GitHub repo URL or a static feed URL.
+    /// Blank falls back to the project's GitHub Releases feed.</summary>
+    public string UpdateFeedUrl { get; set; } = string.Empty;
+
+    /// <summary>Master toggle for ambient RGB peripherals (Epic 8 / Story 8.1).</summary>
+    public bool AmbientDevicesEnabled { get; set; }
+
+    /// <summary>Peripheral LED brightness 0..1, separate from the on-screen <see cref="Brightness"/>.</summary>
+    public float PeripheralBrightness { get; set; } = 1.0f;
+
+    /// <summary>Per-device placement/tuning overrides keyed by stable device id (Story 8.2).
+    /// Devices without an entry use the Auto defaults.</summary>
+    public Dictionary<string, DevicePlacement> DevicePlacements { get; set; } = new();
+
+    /// <summary>Enabled RGB vendor providers (Story 8.3), e.g. "corsair", "razer".
+    /// Corsair-only by default — other ecosystems are opt-in to avoid surprises.</summary>
+    public List<string> RgbProviders { get; set; } = new() { "corsair" };
+
+    /// <summary>Audio-reactive peripheral layer on/off (Story 8.3).</summary>
+    public bool AudioReactiveDevices { get; set; }
+
+    /// <summary>Audio-reactive depth 0..1: 0 = no effect, 1 = silence goes dark.</summary>
+    public float AudioReactiveDepth { get; set; } = 0.5f;
+
     private static readonly JsonSerializerOptions CloneOptions = new(JsonSerializerDefaults.Web);
 
     /// <summary>Deep copy via JSON round-trip.</summary>
@@ -46,6 +73,18 @@ public class Preset
 {
     public string Name { get; set; } = string.Empty;
     public ApplicationSettings Snapshot { get; set; } = new();
+}
+
+/// <summary>Close-the-window behaviors (Story 7.3); bridge values are camelCase strings.</summary>
+public static class CloseActions
+{
+    public const string Ask = "ask";
+    public const string Quit = "quit";
+    public const string MinimizeToTray = "minimizeToTray";
+
+    public static readonly string[] All = { Ask, Quit, MinimizeToTray };
+
+    public static bool IsValid(string? value) => value is Ask or Quit or MinimizeToTray;
 }
 
 /// <summary>Well-known hotkey action names used in <see cref="ApplicationSettings.Hotkeys"/>.</summary>

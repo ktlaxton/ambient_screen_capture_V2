@@ -8,6 +8,7 @@ import type {
   ApplicationSettings,
   CommandMap,
   CommandType,
+  DevicePlacement,
   EffectParams,
 } from '../shared/bridge';
 import { effectsById } from '../effects/registry';
@@ -31,6 +32,8 @@ export function initBridgeGlue(): void {
   bridge.on('status', (payload) =>
     useControlStore.getState().pushToast(payload.level, payload.message),
   );
+  bridge.on('closePrompt', () => useControlStore.getState().openClosePrompt());
+  bridge.on('devices', (payload) => useControlStore.getState().applyDevices(payload));
 
   startFrameFeed();
   bridge.send('requestState', {});
@@ -169,6 +172,72 @@ export function setGlobal(field: GlobalField, value: number): void {
   sendDebounced(`setGlobal:${field}`, 'setGlobal', { [field]: value });
 }
 
+/** Master toggle for ambient RGB peripherals (Story 8.1). */
+export function setAmbientDevicesEnabled(enabled: boolean): void {
+  useControlStore.getState().patchSettings({ ambientDevicesEnabled: enabled });
+  send('setDevices', { enabled });
+}
+
+/** Toggle one RGB vendor provider (Story 8.3); the engine reconnects with the new set. */
+export function setRgbProviderEnabled(key: string, enabled: boolean): void {
+  const { settings, patchSettings } = useControlStore.getState();
+  if (!settings) return;
+  const providers = enabled
+    ? [...new Set([...settings.rgbProviders, key])]
+    : settings.rgbProviders.filter((p) => p !== key);
+  patchSettings({ rgbProviders: providers });
+  send('setRgbProviders', { providers });
+}
+
+/** Audio-reactive peripheral layer toggle (Story 8.3). */
+export function setAudioReactiveDevices(enabled: boolean): void {
+  useControlStore.getState().patchSettings({ audioReactiveDevices: enabled });
+  send('setDevices', { audioReactive: enabled });
+}
+
+/** Audio-reactive depth slider — optimistic patch, debounced send (Story 8.3). */
+export function setAudioReactiveDepth(depth: number): void {
+  useControlStore.getState().patchSettings({ audioReactiveDepth: depth });
+  sendDebounced('setDevices:audioDepth', 'setDevices', { audioDepth: depth });
+}
+
+/** Peripheral brightness slider — optimistic patch, debounced send (Story 8.1). */
+export function setPeripheralBrightness(brightness: number): void {
+  useControlStore.getState().patchSettings({ peripheralBrightness: brightness });
+  sendDebounced('setDevices:brightness', 'setDevices', { brightness });
+}
+
+export function defaultDevicePlacement(): DevicePlacement {
+  return { anchor: 'auto', flip: false, brightness: 1, enabled: true };
+}
+
+/** Resolved placement for a device: stored values merged over the Auto defaults. */
+export function resolvedDevicePlacement(deviceId: string): DevicePlacement {
+  const settings = useControlStore.getState().settings;
+  return { ...defaultDevicePlacement(), ...(settings?.devicePlacements[deviceId] ?? {}) };
+}
+
+/**
+ * Per-device placement/tuning (Story 8.2): optimistic local merge, then a partial
+ * setDevicePlacement send — debounced when the patch is brightness-only (slider drag),
+ * immediate for the discrete controls.
+ */
+export function setDevicePlacement(deviceId: string, patch: Partial<DevicePlacement>): void {
+  const { settings, patchSettings } = useControlStore.getState();
+  if (!settings) return;
+  const merged = { ...resolvedDevicePlacement(deviceId), ...patch };
+  patchSettings({
+    devicePlacements: { ...settings.devicePlacements, [deviceId]: merged },
+  });
+  const payload = { deviceId, ...patch };
+  const brightnessOnly = Object.keys(patch).every((k) => k === 'brightness');
+  if (brightnessOnly) {
+    sendDebounced(`setDevicePlacement:${deviceId}`, 'setDevicePlacement', payload);
+  } else {
+    send('setDevicePlacement', payload);
+  }
+}
+
 export function setAutostart(enabled: boolean): void {
   useControlStore.getState().patchSettings({ autostart: enabled });
   send('setAutostart', { enabled });
@@ -194,6 +263,31 @@ export function deletePreset(name: string): void {
 
 export function windowCommand(action: CommandMap['windowCommand']['action']): void {
   send('windowCommand', { action });
+}
+
+/** Fully terminate the app (Story 7.3) — routed to the same path as tray Exit. */
+export function quitApp(): void {
+  send('quitApp', {});
+}
+
+/** Manual update check (Story 7.4); the engine answers with status toasts. */
+export function checkForUpdates(): void {
+  send('checkForUpdates', {});
+}
+
+export function setCloseAction(action: CommandMap['setCloseAction']['action']): void {
+  useControlStore.getState().patchSettings({ closeAction: action });
+  send('setCloseAction', { action });
+}
+
+/** Answer the close-choice modal; the engine hides or quits accordingly. */
+export function resolveClosePrompt(
+  action: CommandMap['resolveClosePrompt']['action'],
+  remember: boolean,
+): void {
+  useControlStore.getState().closeClosePrompt();
+  if (remember) useControlStore.getState().patchSettings({ closeAction: action });
+  send('resolveClosePrompt', { action, remember });
 }
 
 export function completeOnboarding(): void {

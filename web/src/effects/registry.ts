@@ -6,8 +6,26 @@ import plasma from './plasma';
 import audioBars from './audio-bars';
 import particles from './particles';
 import aurora from './aurora';
+import nebula from './nebula';
+import fire from './fire';
+import rain from './rain';
+import waveform from './waveform';
+import kaleidoscope from './kaleidoscope';
+import ripple from './ripple';
 
-export const effects: EffectModule[] = [edgeGlow, plasma, audioBars, particles, aurora];
+export const effects: EffectModule[] = [
+  edgeGlow,
+  plasma,
+  audioBars,
+  particles,
+  aurora,
+  nebula,
+  fire,
+  rain,
+  waveform,
+  kaleidoscope,
+  ripple,
+];
 
 export const effectsById: Record<string, EffectModule> = Object.fromEntries(
   effects.map((effect) => [effect.id, effect]),
