@@ -7,9 +7,17 @@ import type {
   ApplicationSettings,
   ConfigPayload,
   DevicesPayload,
+  LicenseStatePayload,
   MonitorInfo,
   StatusLevel,
 } from '../shared/bridge';
+
+const FREE_LICENSE: LicenseStatePayload = {
+  edition: 'free',
+  isPremium: false,
+  licensedTo: '',
+  expires: null,
+};
 
 export interface Toast {
   id: number;
@@ -36,6 +44,8 @@ interface ControlState {
   closePromptOpen: boolean;
   /** Ambient RGB peripherals (Story 8.1): live connection state + device list. */
   devices: DevicesPayload;
+  /** Current entitlement (Epic 9); free until a valid license key is applied. */
+  license: LicenseStatePayload;
 }
 
 interface ControlActions {
@@ -70,6 +80,7 @@ export const useControlStore = create<ControlStore>()((set, get) => ({
   onboardingDecided: false,
   closePromptOpen: false,
   devices: { connectionState: 'disabled', devices: [], providers: [] },
+  license: FREE_LICENSE,
 
   setConnected: (connected) => set({ connected }),
 
@@ -78,6 +89,8 @@ export const useControlStore = create<ControlStore>()((set, get) => ({
     set({
       settings: payload.settings,
       appVersion: payload.appVersion,
+      // Back-compat: a pre-Epic-9 engine omits license — default to free.
+      license: payload.license ?? FREE_LICENSE,
       selectedEffectId: state.selectedEffectId ?? payload.settings.activeEffectId,
       onboardingOpen:
         state.onboardingOpen || (payload.firstRun && !state.onboardingDecided),

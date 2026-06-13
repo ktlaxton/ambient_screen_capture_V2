@@ -170,6 +170,7 @@ public sealed class SettingsService : ISettingsService
         RgbProviders = new List<string> { "corsair" },
         AudioReactiveDevices = false,
         AudioReactiveDepth = 0.5f,
+        LicenseKey = string.Empty,
     };
 
     /// <summary>Reads + deserializes one candidate file; returns null on any failure (never throws).</summary>
@@ -241,6 +242,7 @@ public sealed class SettingsService : ISettingsService
                 .Take(16)
                 .ToList();
         settings.AudioReactiveDepth = ClampUnit(settings.AudioReactiveDepth, 0.5f);
+        settings.LicenseKey ??= string.Empty;
         settings.MaxFps = settings.MaxFps is >= 1 and <= 240 ? settings.MaxFps : 60;
         settings.ZonesPerEdge = Math.Clamp(settings.ZonesPerEdge, 1, 64);
         settings.AudioBands = Math.Clamp(settings.AudioBands, 1, 64);

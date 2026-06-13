@@ -8,6 +8,7 @@ import type { MonitorInfo } from '../../shared/bridge';
 import { effects } from '../../effects/registry';
 import { useControlStore } from '../store';
 import { setSourceMonitor, toggleTargetMonitor, setEffectForMonitor } from '../bridgeGlue';
+import { perMonitorEffects, usePremium } from '../premium';
 import { getLatestFrame } from '../frameFeed';
 import { Select } from './controls';
 import './MonitorMap.css';
@@ -141,8 +142,12 @@ export function MonitorMap({ compact = false }: { compact?: boolean }) {
 
   const layout = useMemo(() => computeLayout(monitors, size.w, size.h), [monitors, size]);
 
+  const premium = usePremium();
   const sourceId = settings?.sourceMonitorId ?? '';
   const targetIds = settings?.targetMonitorIds ?? [];
+  // Free glows only the first real target (mirror EngineCoordinator.BuildSpecs); the rest
+  // are selected-but-dormant until upgrade.
+  const liveTargetIds = premium ? targetIds : targetIds.filter((id) => id !== sourceId).slice(0, 1);
 
   // Refs feed the rAF overlay without re-running its effect.
   const sourceRectRef = useRef<Rect | null>(null);
@@ -180,13 +185,14 @@ export function MonitorMap({ compact = false }: { compact?: boolean }) {
           if (!r) return null;
           const isSource = m.id === sourceId;
           const isTarget = targetIds.includes(m.id);
+          const isCapped = isTarget && !isSource && !liveTargetIds.includes(m.id); // free: dormant target
           return (
             <div
               key={m.id}
               role="button"
               tabIndex={0}
               aria-label={`${m.name} — ${isSource ? 'source' : isTarget ? 'target' : 'unused'}`}
-              className={`mon${isSource ? ' src' : ''}${isTarget ? ' tgt' : ''}`}
+              className={`mon${isSource ? ' src' : ''}${isTarget ? ' tgt' : ''}${isCapped ? ' capped' : ''}`}
               style={{ left: r.x, top: r.y, width: r.w, height: r.h }}
               onClick={() => {
                 if (!isSource) toggleTargetMonitor(m.id);
@@ -213,12 +219,17 @@ export function MonitorMap({ compact = false }: { compact?: boolean }) {
               </div>
 
               {isSource && <span className="mon-tag src-tag">SOURCE</span>}
-              {isTarget && (
+              {isTarget && !isCapped && (
                 <span className="mon-tag tgt-tag">
                   <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true">
                     <path d="M1.5 5.5 L4 8 L8.5 2.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
                   </svg>
                   TARGET
+                </span>
+              )}
+              {isCapped && (
+                <span className="mon-tag capped-tag" title="The free edition glows one monitor — upgrade to light them all">
+                  PREMIUM
                 </span>
               )}
 
@@ -235,7 +246,8 @@ export function MonitorMap({ compact = false }: { compact?: boolean }) {
                 </button>
               )}
 
-              {isTarget && !compact && r.w > 96 && (
+              {/* Per-monitor effect overrides are Premium (Epic 9); free uses the global effect. */}
+              {isTarget && premium && perMonitorEffects(premium) && !compact && r.w > 96 && (
                 <div
                   className="mon-effect"
                   onClick={(e) => e.stopPropagation()}

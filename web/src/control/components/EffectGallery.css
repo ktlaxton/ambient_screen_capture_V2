@@ -117,3 +117,30 @@
 .fx-gallery.compact .fx-name {
   font-size: 12px;
 }
+
+/* Premium-locked effects (Epic 9). */
+.fx-card.locked .fx-preview canvas,
+.fx-card.locked .fx-fallback {
+  filter: saturate(0.4) brightness(0.55);
+}
+
+.fx-lock {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #fcd34d, #f59e0b);
+  color: #1b1205;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fx-card.locked:hover {
+  border-color: rgba(245, 158, 11, 0.5);
+}

@@ -27,6 +27,7 @@ public static class CommandTypes
     public const string SetDevices = "setDevices";
     public const string SetDevicePlacement = "setDevicePlacement";
     public const string SetRgbProviders = "setRgbProviders";
+    public const string SetLicenseKey = "setLicenseKey";
 }
 
 /// <summary>Incoming envelope from any WebView2: {"type":"...","payload":{...}}.</summary>
@@ -139,6 +140,12 @@ public sealed class SetDevicesCmd
 public sealed class SetRgbProvidersCmd
 {
     public List<string> Providers { get; set; } = new();
+}
+
+/// <summary>Activate (or, with an empty key, deactivate) an AmbientFx Premium license (Epic 9).</summary>
+public sealed class SetLicenseKeyCmd
+{
+    public string Key { get; set; } = string.Empty;
 }
 
 /// <summary>

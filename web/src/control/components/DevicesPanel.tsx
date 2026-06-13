@@ -20,6 +20,7 @@ import {
   setPeripheralBrightness,
   setRgbProviderEnabled,
 } from '../bridgeGlue';
+import { PURCHASE_URL, usePremium } from '../premium';
 import { Select, Slider, Toggle } from './controls';
 import './DevicesPanel.css';
 
@@ -143,8 +144,28 @@ function DeviceCard({ device, settings }: { device: AmbientDeviceInfo; settings:
 
 export function DevicesPanel({ settings }: { settings: ApplicationSettings }) {
   const devices = useControlStore((s) => s.devices);
+  const premium = usePremium();
   const state = devices.connectionState;
   const hint = STATE_HINT[state];
+
+  // RGB peripherals are a Premium feature (Epic 9). Free users see the pitch, not the controls.
+  if (!premium) {
+    return (
+      <div className="devices-locked">
+        <span className="device-state-chip state-icueNotFound">
+          <i className="device-state-dot" />
+          Premium
+        </span>
+        <p className="device-hint">
+          Spill the ambient glow onto your keyboard, mouse, light strips and fans.
+          RGB peripherals are part of AmbientFx Premium.
+        </p>
+        <a className="license-upgrade" href={PURCHASE_URL} target="_blank" rel="noreferrer noopener">
+          Upgrade to Premium
+        </a>
+      </div>
+    );
+  }
 
   return (
     <>

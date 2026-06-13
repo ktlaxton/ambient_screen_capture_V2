@@ -9,6 +9,7 @@ import type { EffectInstance, EffectModule } from '../../effects/types';
 import { effects } from '../../effects/registry';
 import { useControlStore } from '../store';
 import { setEffectGlobal, resolvedEffectParams } from '../bridgeGlue';
+import { isEffectFree, usePremium } from '../premium';
 import { getLatestFrame, subscribeFrames } from '../frameFeed';
 import './EffectGallery.css';
 
@@ -141,11 +142,13 @@ function EffectCard({
   module,
   active,
   compact,
+  locked,
   onPick,
 }: {
   module: EffectModule;
   active: boolean;
   compact: boolean;
+  locked: boolean;
   onPick: (effectId: string) => void;
 }) {
   const cardRef = useRef<HTMLButtonElement>(null);
@@ -156,13 +159,22 @@ function EffectCard({
     <button
       ref={cardRef}
       type="button"
-      className={`fx-card${active ? ' active' : ''}${compact ? ' compact' : ''}`}
+      className={`fx-card${active ? ' active' : ''}${compact ? ' compact' : ''}${locked ? ' locked' : ''}`}
       onClick={() => onPick(module.id)}
       aria-pressed={active}
+      title={locked ? `${module.name} is part of AmbientFx Premium` : undefined}
     >
       <div className="fx-preview">
         {failed ? <div className="fx-fallback" aria-hidden="true" /> : <canvas ref={canvasRef} />}
         {active && <span className="fx-badge">ACTIVE</span>}
+        {locked && (
+          <span className="fx-lock" aria-label="Premium">
+            <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
+              <path d="M3 5V3.6a3 3 0 0 1 6 0V5h.5A.5.5 0 0 1 10 5.5v5a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5v-5A.5.5 0 0 1 2.5 5H3Zm1.2 0h3.6V3.6a1.8 1.8 0 0 0-3.6 0V5Z" fill="currentColor" />
+            </svg>
+            Premium
+          </span>
+        )}
       </div>
       <div className="fx-meta">
         <span className="fx-name">{module.name}</span>
@@ -181,7 +193,19 @@ export function EffectGallery({
   onPick?: (effectId: string) => void;
 }) {
   const activeEffectId = useControlStore((s) => s.settings?.activeEffectId ?? '');
-  const pick = onPick ?? setEffectGlobal;
+  const premium = usePremium();
+  const basePick = onPick ?? setEffectGlobal;
+
+  // Locked effects show an upsell instead of selecting; the engine is the backstop and
+  // would reject + fall back anyway, but blocking here avoids the optimistic flicker.
+  const pick = (effectId: string) => {
+    if (!premium && !isEffectFree(effectId)) {
+      const name = effects.find((e) => e.id === effectId)?.name ?? 'That effect';
+      useControlStore.getState().pushToast('info', `${name} is part of AmbientFx Premium`);
+      return;
+    }
+    basePick(effectId);
+  };
 
   return (
     <div className={`fx-gallery${compact ? ' compact' : ''}`}>
@@ -191,6 +215,7 @@ export function EffectGallery({
           module={module}
           active={module.id === activeEffectId}
           compact={compact}
+          locked={!premium && !isEffectFree(module.id)}
           onPick={pick}
         />
       ))}

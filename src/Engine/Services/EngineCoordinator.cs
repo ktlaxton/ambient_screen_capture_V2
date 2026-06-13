@@ -4,6 +4,7 @@ using AmbientFx.Bridge;
 using AmbientFx.Capture;
 using AmbientFx.Devices;
 using AmbientFx.Hosting;
+using AmbientFx.Licensing;
 using AmbientFx.Models;
 using AmbientFx.Processing;
 using Microsoft.Extensions.Logging;
@@ -44,6 +45,7 @@ public sealed class EngineCoordinator : IEngineCoordinator
     private readonly IWebViewWindowManager _windowManager;
     private readonly IUpdateService _updates;
     private readonly IAmbientDeviceService _ambientDevices;
+    private readonly ILicenseService _license;
     private readonly ILogger<EngineCoordinator> _logger;
 
     /// <summary>Guards _settings mutations and snapshot clones (UI thread writes, threadpool save reads).</summary>
@@ -72,6 +74,7 @@ public sealed class EngineCoordinator : IEngineCoordinator
         IWebViewWindowManager windowManager,
         IUpdateService updates,
         IAmbientDeviceService ambientDevices,
+        ILicenseService license,
         ILogger<EngineCoordinator> logger)
     {
         _settingsService = settingsService;
@@ -85,6 +88,7 @@ public sealed class EngineCoordinator : IEngineCoordinator
         _windowManager = windowManager;
         _updates = updates;
         _ambientDevices = ambientDevices;
+        _license = license;
         _logger = logger;
 
         // Debounce timer; callback runs on the threadpool and only touches a cloned snapshot.
@@ -99,6 +103,7 @@ public sealed class EngineCoordinator : IEngineCoordinator
         _logger.LogInformation("Engine starting (minimized={Minimized}, version={Version})", startMinimized, AppVersion);
 
         _settings = await _settingsService.LoadAsync();
+        _license.Apply(_settings.LicenseKey); // entitlement before any gated feature starts
         _monitors = _monitorDetection.GetMonitors();
 
         // First run: seed the curated preset library (Story 7.2 AC6) so the preset
@@ -281,7 +286,8 @@ public sealed class EngineCoordinator : IEngineCoordinator
         List<string> providers;
         lock (_gate)
         {
-            run = _settings.IsEnabled && _settings.AmbientDevicesEnabled;
+            run = _settings.IsEnabled && _settings.AmbientDevicesEnabled
+                && Entitlements.RgbPeripherals(_license.Current.IsPremium); // Epic 9 gate
             brightness = _settings.PeripheralBrightness;
             audioReactive = _settings.AudioReactiveDevices;
             audioDepth = _settings.AudioReactiveDepth;
@@ -314,13 +320,18 @@ public sealed class EngineCoordinator : IEngineCoordinator
     private MonitorInfo? ResolveSource() =>
         _monitors.FirstOrDefault(m => m.Id == _settings.SourceMonitorId);
 
-    /// <summary>One spec per existing, non-source target monitor.</summary>
+    /// <summary>One spec per existing, non-source target monitor, capped by entitlement (Epic 9).</summary>
     private IReadOnlyList<EffectWindowSpec> BuildSpecs()
     {
         var source = ResolveSource();
         var specs = new List<EffectWindowSpec>();
+        int max = Entitlements.MaxTargetMonitors(_license.Current.IsPremium);
         foreach (var id in _settings.TargetMonitorIds)
         {
+            if (specs.Count >= max)
+            {
+                break; // free tier glows one monitor; the rest stay listed but dormant
+            }
             if (id == _settings.SourceMonitorId)
             {
                 continue;
@@ -348,8 +359,16 @@ public sealed class EngineCoordinator : IEngineCoordinator
         Relation = source is null ? "none" : MonitorLayout.ComputeRelation(source, monitor),
     };
 
-    private string EffectiveEffectId(string monitorId) =>
-        _settings.EffectByMonitorId.GetValueOrDefault(monitorId, _settings.ActiveEffectId);
+    /// <summary>Resolves the effect for a monitor, downgrading anything the edition doesn't
+    /// allow (Epic 9): free ignores per-monitor overrides and falls back from premium effects.</summary>
+    private string EffectiveEffectId(string monitorId)
+    {
+        bool premium = _license.Current.IsPremium;
+        string effectId = Entitlements.PerMonitorEffects(premium)
+            ? _settings.EffectByMonitorId.GetValueOrDefault(monitorId, _settings.ActiveEffectId)
+            : _settings.ActiveEffectId;
+        return Entitlements.EffectAllowed(effectId, premium) ? effectId : Entitlements.FallbackEffect;
+    }
 
     private async Task SyncEffectWindowsSafeAsync(IReadOnlyList<EffectWindowSpec> specs)
     {
@@ -414,6 +433,10 @@ public sealed class EngineCoordinator : IEngineCoordinator
                         .Distinct()
                         .ToList();
                 }
+                if (_settings.TargetMonitorIds.Count > Entitlements.MaxTargetMonitors(_license.Current.IsPremium))
+                {
+                    Toast("info", "The free edition glows one monitor — AmbientFx Premium lights them all");
+                }
                 if (_settings.IsEnabled)
                 {
                     _ = SyncEffectWindowsSafeAsync(BuildSpecs());
@@ -426,6 +449,13 @@ public sealed class EngineCoordinator : IEngineCoordinator
             case CommandTypes.SetEffect:
             {
                 if (envelope.PayloadAs<SetEffectCmd>() is not { } cmd) { LogBadPayload(envelope); break; }
+                if (!string.IsNullOrEmpty(cmd.EffectId)
+                    && !Entitlements.EffectAllowed(cmd.EffectId, _license.Current.IsPremium))
+                {
+                    Toast("info", "That effect is part of AmbientFx Premium");
+                    PushConfig(); // snap the optimistic UI selection back
+                    break;
+                }
                 bool global = string.IsNullOrEmpty(cmd.MonitorId) || cmd.MonitorId == "all";
                 if (global)
                 {
@@ -505,6 +535,12 @@ public sealed class EngineCoordinator : IEngineCoordinator
             case CommandTypes.SetDevices:
             {
                 if (envelope.PayloadAs<SetDevicesCmd>() is not { } cmd) { LogBadPayload(envelope); break; }
+                if (cmd.Enabled == true && !Entitlements.RgbPeripherals(_license.Current.IsPremium))
+                {
+                    Toast("info", "RGB peripherals are part of AmbientFx Premium");
+                    PushConfig(); // snap the optimistic toggle back
+                    break;
+                }
                 bool toggled = false;
                 lock (_gate)
                 {
@@ -587,6 +623,33 @@ public sealed class EngineCoordinator : IEngineCoordinator
                 ApplyAmbientDeviceState(); // pushes the new mapping live (no reconnect)
                 PushConfig();
                 if (discrete) SaveNow(); else ScheduleSave();
+                break;
+            }
+
+            case CommandTypes.SetLicenseKey:
+            {
+                if (envelope.PayloadAs<SetLicenseKeyCmd>() is not { } cmd) { LogBadPayload(envelope); break; }
+                var result = _license.Apply(cmd.Key);
+                if (result.IsValid)
+                {
+                    lock (_gate) { _settings.LicenseKey = cmd.Key.Trim(); }
+                    Toast("info", $"AmbientFx Premium activated — thanks{(result.LicensedTo.Length > 0 ? $", {result.LicensedTo}" : string.Empty)}!");
+                }
+                else if (string.IsNullOrWhiteSpace(cmd.Key))
+                {
+                    lock (_gate) { _settings.LicenseKey = string.Empty; }
+                    Toast("info", "License removed — back to the free edition");
+                }
+                else
+                {
+                    Toast("warn", result.Error ?? "That license key is not valid");
+                    PushConfig();
+                    break; // invalid key: nothing persisted, entitlement unchanged
+                }
+                ApplyEnabledState(); // entitlement changed: window count + RGB re-evaluate
+                PushWindowConfigs(); // effect fallbacks may have changed
+                PushConfig();
+                SaveNow();
                 break;
             }
 
@@ -890,11 +953,19 @@ public sealed class EngineCoordinator : IEngineCoordinator
     {
         ApplicationSettings snapshot;
         lock (_gate) { snapshot = _settings.Clone(); }
+        var license = _license.Current;
         return new ConfigPayload
         {
             Settings = snapshot,
             FirstRun = !snapshot.FirstRunCompleted,
             AppVersion = AppVersion,
+            License = new LicenseStatePayload
+            {
+                Edition = license.Edition,
+                IsPremium = license.IsPremium,
+                LicensedTo = license.LicensedTo,
+                Expires = license.Expires?.ToString("yyyy-MM-dd"),
+            },
         };
     }
 

@@ -17,6 +17,7 @@ import { GlobalControls } from './components/GlobalControls';
 import { PresetsPanel } from './components/PresetsPanel';
 import { SettingsPanel } from './components/SettingsPanel';
 import { DevicesPanel } from './components/DevicesPanel';
+import { LicensePanel } from './components/LicensePanel';
 import { Onboarding } from './components/Onboarding';
 import { ClosePrompt } from './components/ClosePrompt';
 import { Toasts } from './components/Toasts';
@@ -125,6 +126,13 @@ export default function App() {
                 Settings
               </div>
               <SettingsPanel settings={settings} />
+            </section>
+            <section className="card col-6">
+              <div className="card-title">
+                <span className="dot" />
+                License
+              </div>
+              <LicensePanel />
             </section>
             <section className="card col-12">
               <div className="card-title">

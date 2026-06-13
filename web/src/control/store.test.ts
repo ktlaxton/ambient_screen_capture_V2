@@ -36,12 +36,19 @@ function makeSettings(overrides: Partial<ApplicationSettings> = {}): Application
     rgbProviders: ['corsair'],
     audioReactiveDevices: false,
     audioReactiveDepth: 0.5,
+    licenseKey: '',
     ...overrides,
   };
 }
 
 function makeConfig(overrides: Partial<ConfigPayload> = {}): ConfigPayload {
-  return { settings: makeSettings(), firstRun: false, appVersion: '2.0.0', ...overrides };
+  return {
+    settings: makeSettings(),
+    firstRun: false,
+    appVersion: '2.0.0',
+    license: { edition: 'free', isPremium: false, licensedTo: '', expires: null },
+    ...overrides,
+  };
 }
 
 const MONITORS: MonitorInfo[] = [
@@ -61,6 +68,7 @@ beforeEach(() => {
     onboardingOpen: false,
     onboardingDecided: false,
     devices: { connectionState: 'disabled', devices: [], providers: [] },
+    license: { edition: 'free', isPremium: false, licensedTo: '', expires: null },
   });
 });
 
@@ -81,6 +89,37 @@ describe('initial state', () => {
     expect(s.onboardingOpen).toBe(false);
     expect(s.onboardingDecided).toBe(false);
     expect(s.devices).toEqual({ connectionState: 'disabled', devices: [], providers: [] });
+  });
+});
+
+describe('license (Epic 9)', () => {
+  it('defaults to the free edition', () => {
+    expect(useControlStore.getState().license).toEqual({
+      edition: 'free',
+      isPremium: false,
+      licensedTo: '',
+      expires: null,
+    });
+  });
+
+  it('applyConfig adopts the pushed entitlement', () => {
+    useControlStore.getState().applyConfig(
+      makeConfig({
+        license: { edition: 'premium', isPremium: true, licensedTo: 'Kirk', expires: null },
+      }),
+    );
+    const lic = useControlStore.getState().license;
+    expect(lic.isPremium).toBe(true);
+    expect(lic.licensedTo).toBe('Kirk');
+  });
+
+  it('falls back to free when a pre-Epic-9 engine omits license', () => {
+    // Simulate an older engine: a config payload with no license field.
+    const legacy = makeConfig();
+    delete (legacy as { license?: unknown }).license;
+    useControlStore.getState().applyConfig(legacy);
+    expect(useControlStore.getState().license.isPremium).toBe(false);
+    expect(useControlStore.getState().license.edition).toBe('free');
   });
 });
 

@@ -272,6 +272,52 @@ describe('createSimulatorBridge', () => {
     expect(last(configs).settings.firstRunCompleted).toBe(true);
   });
 
+  // Epic 9: the simulator mirrors the engine's premium gates so dev testing is faithful.
+  it('blocks a premium effect on the free tier and accepts it with ?premium=1', () => {
+    bridge = createSimulatorBridge();
+    const configs = collect(bridge, 'config');
+    const statuses = collect(bridge, 'status');
+
+    bridge.send('setEffect', { effectId: 'nebula' }); // premium effect, free tier
+    expect(configs.length === 0 || last(configs).settings.activeEffectId !== 'nebula').toBe(true);
+    expect(statuses.some((s) => s.message.includes('Premium'))).toBe(true);
+
+    bridge.dispose();
+    vi.stubGlobal('location', new URL('http://localhost/control.html?premium=1'));
+    bridge = createSimulatorBridge();
+    const cfgs2 = collect(bridge, 'config');
+    bridge.send('setEffect', { effectId: 'nebula' });
+    expect(last(cfgs2).settings.activeEffectId).toBe('nebula');
+    expect(last(cfgs2).license.isPremium).toBe(true);
+  });
+
+  it('refuses to enable RGB peripherals on the free tier, allows it once licensed', () => {
+    bridge = createSimulatorBridge();
+    const configs = collect(bridge, 'config');
+    const statuses = collect(bridge, 'status');
+
+    bridge.send('setDevices', { enabled: true });
+    expect(last(configs).settings.ambientDevicesEnabled).toBe(false);
+    expect(last(configs).license.isPremium).toBe(false);
+    expect(statuses.some((s) => s.message.includes('Premium'))).toBe(true);
+
+    bridge.send('setLicenseKey', { key: 'AFX1.any.key' }); // sim treats any key as premium
+    expect(last(configs).license.isPremium).toBe(true);
+    bridge.send('setDevices', { enabled: true });
+    expect(last(configs).settings.ambientDevicesEnabled).toBe(true);
+  });
+
+  it('keeps the full target list on free tier but surfaces the one-monitor upsell', () => {
+    bridge = createSimulatorBridge();
+    const configs = collect(bridge, 'config');
+    const statuses = collect(bridge, 'status');
+
+    bridge.send('setTargetMonitors', { monitorIds: [DISPLAY2, '\\\\.\\DISPLAY3'] });
+    // The selection is preserved (mirrors the engine — dormant targets show a Premium badge).
+    expect(last(configs).settings.targetMonitorIds).toEqual([DISPLAY2, '\\\\.\\DISPLAY3']);
+    expect(statuses.some((s) => s.message.includes('one monitor'))).toBe(true);
+  });
+
   it('dispose stops all timers (no emissions afterwards)', () => {
     bridge = createSimulatorBridge();
     const frames = collect(bridge, 'frame');

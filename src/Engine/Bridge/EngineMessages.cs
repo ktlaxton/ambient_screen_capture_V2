@@ -73,6 +73,22 @@ public sealed class ConfigPayload
     public ApplicationSettings Settings { get; set; } = new();
     public bool FirstRun { get; set; }
     public string AppVersion { get; set; } = string.Empty;
+
+    /// <summary>Current entitlement (Epic 9); drives the web UI's premium gating.</summary>
+    public LicenseStatePayload License { get; set; } = new();
+}
+
+/// <summary>Entitlement state for the UI (Epic 9). Never includes the key itself beyond settings.</summary>
+public sealed class LicenseStatePayload
+{
+    /// <summary>"free" | "premium"</summary>
+    public string Edition { get; set; } = "free";
+
+    public bool IsPremium { get; set; }
+    public string LicensedTo { get; set; } = string.Empty;
+
+    /// <summary>ISO date when a subscription-style key expires; null/empty = perpetual.</summary>
+    public string? Expires { get; set; }
 }
 
 /// <summary>

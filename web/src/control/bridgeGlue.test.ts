@@ -97,12 +97,19 @@ function makeSettings(overrides: Partial<ApplicationSettings> = {}): Application
     rgbProviders: ['corsair'],
     audioReactiveDevices: false,
     audioReactiveDepth: 0.5,
+    licenseKey: '',
     ...overrides,
   };
 }
 
 function makeConfig(overrides: Partial<ConfigPayload> = {}): ConfigPayload {
-  return { settings: makeSettings(), firstRun: false, appVersion: '2.0.0', ...overrides };
+  return {
+    settings: makeSettings(),
+    firstRun: false,
+    appVersion: '2.0.0',
+    license: { edition: 'free', isPremium: false, licensedTo: '', expires: null },
+    ...overrides,
+  };
 }
 
 const MONITORS: MonitorInfo[] = [
@@ -484,6 +491,22 @@ describe('vendors + audio reactive (Story 8.3)', () => {
     expect(mocks.bridge.send).toHaveBeenCalledTimes(2);
     expect(mocks.bridge.send).toHaveBeenCalledWith('setDevices', { audioDepth: 0.8 });
     expect(mocks.bridge.send).toHaveBeenCalledWith('setDevices', { brightness: 0.4 });
+  });
+});
+
+describe('license (Epic 9)', () => {
+  it('setLicenseKey sends the trimmed key without optimistic edition change', () => {
+    initWithConfig();
+    glue.setLicenseKey('  AFX1.some.key  ');
+    expect(mocks.bridge.send).toHaveBeenCalledWith('setLicenseKey', { key: 'AFX1.some.key' });
+    // Non-optimistic: the engine validates and pushes the real entitlement.
+    expect(getState().license.isPremium).toBe(false);
+  });
+
+  it('setLicenseKey with an empty string deactivates', () => {
+    initWithConfig();
+    glue.setLicenseKey('');
+    expect(mocks.bridge.send).toHaveBeenCalledWith('setLicenseKey', { key: '' });
   });
 });
 

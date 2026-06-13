@@ -39,6 +39,7 @@ function makeSettings(): ApplicationSettings {
     rgbProviders: ['corsair'],
     audioReactiveDevices: false,
     audioReactiveDepth: 0.5,
+    licenseKey: '',
   };
 }
 

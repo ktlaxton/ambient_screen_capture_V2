@@ -3,6 +3,7 @@ using AmbientFx.Bridge;
 using AmbientFx.Capture;
 using AmbientFx.Devices;
 using AmbientFx.Hosting;
+using AmbientFx.Licensing;
 using AmbientFx.Models;
 using AmbientFx.Processing;
 using AmbientFx.Services;
@@ -38,6 +39,9 @@ internal sealed class CoordinatorHarness
     /// <summary>Defaults to IsSupported=false so no launch-time update check fires in tests.</summary>
     public Mock<IUpdateService> Updates { get; } = new();
     public Mock<IAmbientDeviceService> AmbientDevices { get; } = new();
+    /// <summary>Defaults to PREMIUM so the pre-Epic-9 suites exercise full behavior;
+    /// gating tests call <see cref="UseFreeEdition"/>.</summary>
+    public Mock<ILicenseService> License { get; } = new();
 
     /// <summary>The instance LoadAsync hands to the coordinator; mutate before StartAsync.</summary>
     public ApplicationSettings InitialSettings { get; } = new();
@@ -73,6 +77,8 @@ internal sealed class CoordinatorHarness
         // Moq would otherwise return a null snapshot and crash BuildDevicesPayload.
         AmbientDevices.SetupGet(d => d.Snapshot).Returns(new AmbientDevicesSnapshot());
 
+        GrantPremium(); // full behavior by default; Epic 9 gating tests downgrade explicitly
+
         WindowManager.Setup(w => w.InitializeAsync()).Returns(Task.CompletedTask);
         WindowManager.Setup(w => w.ShowControlWindowAsync()).Returns(Task.CompletedTask);
         WindowManager.Setup(w => w.SyncEffectWindowsAsync(It.IsAny<IReadOnlyList<EffectWindowSpec>>()))
@@ -100,7 +106,29 @@ internal sealed class CoordinatorHarness
             WindowManager.Object,
             Updates.Object,
             AmbientDevices.Object,
+            License.Object,
             NullLogger<EngineCoordinator>.Instance);
+    }
+
+    /// <summary>Switches the mocked license to a valid premium entitlement (Epic 9 tests).</summary>
+    public LicenseInfo GrantPremium(string licensedTo = "Test User")
+    {
+        var premium = new LicenseInfo
+        {
+            IsValid = true,
+            Edition = LicenseEditions.Premium,
+            LicensedTo = licensedTo,
+        };
+        License.SetupGet(l => l.Current).Returns(premium);
+        License.Setup(l => l.Apply(It.IsAny<string?>())).Returns(premium);
+        return premium;
+    }
+
+    /// <summary>Switches the mocked license to the free edition (Epic 9 gating tests).</summary>
+    public void UseFreeEdition()
+    {
+        License.SetupGet(l => l.Current).Returns(LicenseInfo.Free);
+        License.Setup(l => l.Apply(It.IsAny<string?>())).Returns(LicenseInfo.Free);
     }
 
     public Task StartAsync(bool minimized = true) => Coordinator.StartAsync(minimized);
@@ -130,6 +158,11 @@ internal sealed class CoordinatorHarness
     /// <summary>The settings snapshot inside the most recent PostToAll("config", ...) push.</summary>
     public ConfigPayload LastConfig =>
         (ConfigPayload)AllPosts.Last(p => p.Type == MessageTypes.Config).Payload;
+
+    /// <summary>The config inside the most recent PostToControl("config", ...) push — the
+    /// requestState path the web app uses on boot (StartAsync alone posts no config).</summary>
+    public ConfigPayload LastControlConfig =>
+        (ConfigPayload)ControlPosts.Last(p => p.Type == MessageTypes.Config).Payload;
 
     public int CaptureStopCount =>
         Capture.Invocations.Count(i => i.Method.Name == nameof(IScreenCaptureService.Stop));

@@ -106,12 +106,18 @@ function makeSettings(overrides: Partial<ApplicationSettings> = {}): Application
     rgbProviders: ['corsair'],
     audioReactiveDevices: false,
     audioReactiveDepth: 0.5,
+    licenseKey: '',
     ...overrides,
   };
 }
 
 function makeConfig(settings: Partial<ApplicationSettings> = {}): ConfigPayload {
-  return { settings: makeSettings(settings), firstRun: false, appVersion: '2.0.0' };
+  return {
+    settings: makeSettings(settings),
+    firstRun: false,
+    appVersion: '2.0.0',
+    license: { edition: 'free', isPremium: false, licensedTo: '', expires: null },
+  };
 }
 
 function makeFrame(t = 1): FramePayload {

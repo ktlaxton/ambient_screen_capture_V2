@@ -113,6 +113,17 @@
   box-shadow: 0 0 10px rgba(139, 92, 246, 0.5);
 }
 
+/* Free-edition dormant target (Epic 9): selected but not glowing until upgrade. */
+.mon.capped {
+  border-color: rgba(245, 158, 11, 0.45);
+  box-shadow: none;
+}
+
+.mon-tag.capped-tag {
+  color: #1b1205;
+  background: linear-gradient(135deg, #fcd34d, #f59e0b);
+}
+
 .mon-make-src {
   position: absolute;
   top: 50%;

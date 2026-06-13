@@ -238,6 +238,15 @@ export function setDevicePlacement(deviceId: string, patch: Partial<DevicePlacem
   }
 }
 
+/**
+ * Activate (or, with an empty key, deactivate) an AmbientFx Premium license (Epic 9).
+ * Deliberately NOT optimistic: the engine verifies the signature and pushes back the real
+ * entitlement, so an invalid key never shows as activated.
+ */
+export function setLicenseKey(key: string): void {
+  send('setLicenseKey', { key: key.trim() });
+}
+
 export function setAutostart(enabled: boolean): void {
   useControlStore.getState().patchSettings({ autostart: enabled });
   send('setAutostart', { enabled });

@@ -105,6 +105,9 @@ internal sealed class ControlWindow : Window
 
         core.WebMessageReceived += OnWebMessageReceived;
         core.ProcessFailed += OnProcessFailed;
+        // External links (e.g. the Epic 9 "Upgrade" / purchase URL) must open in the user's
+        // real browser, never as a blank in-app WebView2 popup.
+        core.NewWindowRequested += OnNewWindowRequested;
 
         core.Navigate(WebViewHelpers.ControlUrl);
         _logger.LogInformation("Control window navigating to {Url}", WebViewHelpers.ControlUrl);
@@ -226,6 +229,32 @@ internal sealed class ControlWindow : Window
             return;
         }
         BridgeMessageReceived?.Invoke(this, json);
+    }
+
+    /// <summary>
+    /// Routes window.open / target=_blank (the "Upgrade" purchase link, Epic 9) to the OS
+    /// default browser instead of a blank in-app popup. Only http(s) is honored — never let
+    /// the page spawn arbitrary processes.
+    /// </summary>
+    private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        e.Handled = true;
+        if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not open external link {Uri}", uri.AbsoluteUri);
+            }
+        }
+        else
+        {
+            _logger.LogWarning("Blocked a non-http new-window request: {Uri}", e.Uri);
+        }
     }
 
     private void OnProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs e)

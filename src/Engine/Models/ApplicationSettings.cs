@@ -60,6 +60,9 @@ public class ApplicationSettings
     /// <summary>Audio-reactive depth 0..1: 0 = no effect, 1 = silence goes dark.</summary>
     public float AudioReactiveDepth { get; set; } = 0.5f;
 
+    /// <summary>AmbientFx Premium license key (Epic 9); empty = free edition.</summary>
+    public string LicenseKey { get; set; } = string.Empty;
+
     private static readonly JsonSerializerOptions CloneOptions = new(JsonSerializerDefaults.Web);
 
     /// <summary>Deep copy via JSON round-trip.</summary>

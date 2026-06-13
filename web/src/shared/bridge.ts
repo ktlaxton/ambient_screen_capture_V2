@@ -94,6 +94,20 @@ export interface ApplicationSettings {
   audioReactiveDevices: boolean;
   /** Audio-reactive depth 0..1: 0 = no effect, 1 = silence goes dark. */
   audioReactiveDepth: number;
+  /** AmbientFx Premium license key (Epic 9); empty = free edition. */
+  licenseKey: string;
+}
+
+/** AmbientFx edition (Epic 9). */
+export type LicenseEdition = 'free' | 'premium';
+
+/** Current entitlement, pushed inside ConfigPayload (Epic 9). Drives premium gating. */
+export interface LicenseStatePayload {
+  edition: LicenseEdition;
+  isPremium: boolean;
+  licensedTo: string;
+  /** ISO date a subscription-style key expires; null/absent = perpetual. */
+  expires?: string | null;
 }
 
 /** Where a device sits relative to the screen (Story 8.2). auto/behind = nearest-edge mapping. */
@@ -152,6 +166,8 @@ export interface ConfigPayload {
   settings: ApplicationSettings;
   firstRun: boolean;
   appVersion: string;
+  /** Current entitlement (Epic 9); drives premium gating in the UI. */
+  license: LicenseStatePayload;
 }
 
 export interface MonitorsPayload {
@@ -237,6 +253,8 @@ export interface CommandMap {
     brightness?: number;
     enabled?: boolean;
   };
+  /** Activate (empty key = deactivate) an AmbientFx Premium license (Epic 9). */
+  setLicenseKey: { key: string };
 }
 
 export type EngineMessageType = keyof EngineMessageMap;

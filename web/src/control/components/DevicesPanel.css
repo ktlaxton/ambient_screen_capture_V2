@@ -134,6 +134,13 @@
   color: var(--text-faint);
 }
 
+.devices-locked {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
 /* Vendor provider list (Story 8.3). */
 
 .provider-section {

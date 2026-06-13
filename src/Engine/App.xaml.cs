@@ -2,6 +2,7 @@ using System.IO;
 using AmbientFx.Capture;
 using AmbientFx.Devices;
 using AmbientFx.Hosting;
+using AmbientFx.Licensing;
 using AmbientFx.Processing;
 using AmbientFx.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -186,6 +187,7 @@ public partial class App : Application
         services.AddSingleton<IAmbientDeviceService>(sp => new RgbNetAmbientDeviceService(
             providers => new RgbNetBackend(sp.GetRequiredService<ILogger<RgbNetBackend>>(), providers),
             sp.GetRequiredService<ILogger<RgbNetAmbientDeviceService>>()));
+        services.AddSingleton<ILicenseService, LicenseService>();
         services.AddSingleton<IEngineCoordinator, EngineCoordinator>();
     }
 

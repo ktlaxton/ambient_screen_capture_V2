@@ -17,6 +17,7 @@ import type {
   EngineMessageMap,
   EngineMessageType,
   FramePayload,
+  LicenseStatePayload,
   MonitorInfo,
   RGB,
   RgbProviderStatus,
@@ -63,6 +64,20 @@ export function defaultSimSettings(): ApplicationSettings {
     rgbProviders: ['corsair'],
     audioReactiveDevices: false,
     audioReactiveDepth: 0.5,
+    licenseKey: '',
+  };
+}
+
+// Dev/sim stand-in for license verification (the simulator can't verify a real signed key):
+// any non-empty key activates Premium so the gated UI can be exercised in a browser. Try
+// control.html?premium=1 to boot Premium.
+function simLicense(settings: ApplicationSettings): LicenseStatePayload {
+  const premium = settings.licenseKey.trim().length > 0;
+  return {
+    edition: premium ? 'premium' : 'free',
+    isPremium: premium,
+    licensedTo: premium ? 'Simulator User' : '',
+    expires: null,
   };
 }
 
@@ -118,6 +133,7 @@ export function createSimulatorBridge(): Bridge {
   const settings = defaultSimSettings();
   const urlParams = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
   if (urlParams.get('firstrun') === '1') settings.firstRunCompleted = false;
+  if (urlParams.get('premium') === '1') settings.licenseKey = 'AFX1.sim.premium';
 
   const emit = <K extends EngineMessageType>(type: K, payload: EngineMessageMap[K]) => hub.emit(type, payload);
 
@@ -126,6 +142,7 @@ export function createSimulatorBridge(): Bridge {
       settings: clone(settings),
       firstRun: !settings.firstRunCompleted,
       appVersion: '0.0.0-simulator',
+      license: simLicense(settings),
     });
 
   // Coarse fallback relation, mirroring MonitorLayout.ComputeRelation (effects
@@ -167,6 +184,12 @@ export function createSimulatorBridge(): Bridge {
       : { connectionState: 'icueNotFound', devices: [], providers };
   };
 
+  // Premium gating mirror (Epic 9) so the simulator behaves like the engine for dev testing.
+  // Keep SIM_FREE_EFFECTS in sync with Entitlements.cs / premium.ts.
+  const SIM_FREE_EFFECTS = ['edge-glow', 'plasma', 'aurora', 'particles'];
+  const isPremium = () => simLicense(settings).isPremium;
+  const effectAllowed = (id: string) => isPremium() || SIM_FREE_EFFECTS.includes(id);
+
   const start = typeof performance !== 'undefined' ? performance.now() : 0;
   const frameTimer = setInterval(() => {
     if (!settings.isEnabled) return;
@@ -195,6 +218,12 @@ export function createSimulatorBridge(): Bridge {
       }
       case 'setDevices': {
         const cmd = payload as CommandMap['setDevices'];
+        // Mirror the engine: enabling RGB peripherals while unlicensed is refused (Epic 9).
+        if (cmd.enabled === true && !isPremium()) {
+          emit('status', { level: 'info', message: 'RGB peripherals are part of AmbientFx Premium' });
+          pushConfig();
+          break;
+        }
         if (cmd.enabled !== undefined) settings.ambientDevicesEnabled = cmd.enabled;
         if (cmd.brightness !== undefined) settings.peripheralBrightness = cmd.brightness;
         if (cmd.audioReactive !== undefined) settings.audioReactiveDevices = cmd.audioReactive;
@@ -207,6 +236,12 @@ export function createSimulatorBridge(): Bridge {
         settings.rgbProviders = [...(payload as CommandMap['setRgbProviders']).providers];
         pushConfig();
         emit('devices', devicesPayload());
+        break;
+      }
+      case 'setLicenseKey': {
+        settings.licenseKey = (payload as CommandMap['setLicenseKey']).key;
+        pushConfig();
+        emit('devices', devicesPayload()); // edition change may gate/ungate peripherals
         break;
       }
       case 'setDevicePlacement': {
@@ -234,12 +269,27 @@ export function createSimulatorBridge(): Bridge {
         break;
       }
       case 'setTargetMonitors': {
-        settings.targetMonitorIds = [...(payload as CommandMap['setTargetMonitors']).monitorIds];
+        const ids = [...(payload as CommandMap['setTargetMonitors']).monitorIds];
+        settings.targetMonitorIds = ids;
+        // Mirror the engine: free keeps the full selection but only the first glows; the rest
+        // are dormant (the UI shows a Premium badge). Surface the same upsell when over the cap.
+        if (!isPremium() && ids.filter((id) => id !== settings.sourceMonitorId).length > 1) {
+          emit('status', {
+            level: 'info',
+            message: 'The free edition glows one monitor — AmbientFx Premium lights them all',
+          });
+        }
         pushConfig();
         break;
       }
       case 'setEffect': {
         const cmd = payload as CommandMap['setEffect'];
+        // Mirror the engine: a premium effect is refused on the free tier (Epic 9).
+        if (cmd.effectId && !effectAllowed(cmd.effectId)) {
+          emit('status', { level: 'info', message: 'That effect is part of AmbientFx Premium' });
+          pushConfig();
+          break;
+        }
         if (!cmd.monitorId || cmd.monitorId === 'all') {
           settings.activeEffectId = cmd.effectId;
           settings.effectByMonitorId = {};
