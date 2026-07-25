@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "name": "L-shape",
+  "sourceMonitorId": "\\\\.\\SIM-DISPLAY1",
+  "monitors": [
+    { "id": "\\\\.\\SIM-DISPLAY1", "name": "Corner 1080p (sim)", "x": 0, "y": 0, "width": 1920, "height": 1080, "isPrimary": true, "pattern": "gradient" },
+    { "id": "\\\\.\\SIM-DISPLAY2", "name": "Right 1080p (sim)", "x": 1920, "y": 0, "width": 1920, "height": 1080, "isPrimary": false, "pattern": "bars" },
+    { "id": "\\\\.\\SIM-DISPLAY3", "name": "Below 1080p (sim)", "x": 0, "y": 1080, "width": 1920, "height": 1080, "isPrimary": false, "pattern": "testcard" }
+  ]
+}

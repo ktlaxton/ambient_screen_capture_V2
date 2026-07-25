@@ -16,8 +16,15 @@ namespace AmbientFx.Hosting;
 /// Left/Top DIPs, never WindowState.Maximized — mixed-DPI trap, research note §7).
 /// The window never takes focus or appears in Alt-Tab/taskbar.
 /// Pure code-behind — no XAML. All members are UI-thread affine.
+/// <para>
+/// Implements <see cref="IEffectSurfaceHost"/> (Story 10.2) with zero behavior change: the
+/// interface mirrors the surface API this window already exposed, and <c>Show()</c>/<c>Close()</c>
+/// are inherited from <see cref="Window"/>. The simulator substitutes a different
+/// <see cref="IEffectSurfaceHost"/> via the window manager's injected factory; this production path
+/// is untouched.
+/// </para>
 /// </summary>
-internal sealed class EffectWindow : Window
+internal sealed class EffectWindow : Window, IEffectSurfaceHost
 {
     private readonly ILogger _logger;
     private readonly WebView2 _webView;

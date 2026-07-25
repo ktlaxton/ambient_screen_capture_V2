@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Threading;
 using AmbientFx.Bridge;
 using AmbientFx.Capture;
+using AmbientFx.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Web.WebView2.Core;
 using Application = System.Windows.Application;
@@ -21,6 +22,13 @@ namespace AmbientFx.Hosting;
 public sealed class WebViewWindowManager : IWebViewWindowManager
 {
     private readonly ILogger<WebViewWindowManager> _logger;
+
+    /// <summary>
+    /// Builds an effect surface for a monitor (Story 10.2). The production factory returns a real
+    /// <see cref="EffectWindow"/>; the simulator injects a factory that returns a composite-window
+    /// viewport. The bridge, coordinator, and window-config payloads are unaffected.
+    /// </summary>
+    private readonly Func<MonitorInfo, IEffectSurfaceHost> _surfaceFactory;
 
     /// <summary>Guards <see cref="_effectWindows"/> (mutated on the UI thread, read from
     /// any thread by the Post* hot path).</summary>
@@ -58,12 +66,23 @@ public sealed class WebViewWindowManager : IWebViewWindowManager
     public event EventHandler<PipelineErrorEventArgs>? Error;
 
     /// <summary>Creates the manager. Resolve as a singleton; call <see cref="InitializeAsync"/>
-    /// once on the UI thread before showing any window.</summary>
-    public WebViewWindowManager(ILogger<WebViewWindowManager> logger)
+    /// once on the UI thread before showing any window. <paramref name="surfaceFactory"/> builds each
+    /// effect surface — the production composition supplies <c>m =&gt; new EffectWindow(m, …)</c>; the
+    /// simulator supplies a composite-window viewport factory (Story 10.2).</summary>
+    public WebViewWindowManager(ILogger<WebViewWindowManager> logger, Func<MonitorInfo, IEffectSurfaceHost> surfaceFactory)
     {
         _logger = logger;
+        _surfaceFactory = surfaceFactory;
         _controlTarget = new PostTarget(json => _controlWindow?.TryPostWebMessage(json));
     }
+
+    /// <summary>
+    /// Test seam (no real WebView2 in CI): when true, effect surfaces are created via the injected
+    /// factory even though the shared <see cref="CoreWebView2Environment"/> was never initialized, so
+    /// the sync logic can be exercised with fake surfaces. Production never sets this — real surfaces
+    /// require the environment. Mirrors the coordinator's <c>ShutdownRequester</c> test-seam pattern.
+    /// </summary>
+    internal bool AllowSurfaceCreationWithoutEnvironment { get; set; }
 
     /// <inheritdoc />
     /// <remarks>Backed by a volatile mirror of the window's visibility so it is safe to read
@@ -194,7 +213,7 @@ public sealed class WebViewWindowManager : IWebViewWindowManager
             desired[spec.Monitor.Id] = spec;
         }
 
-        if (desired.Count > 0 && _environment is null)
+        if (desired.Count > 0 && _environment is null && !AllowSurfaceCreationWithoutEnvironment)
         {
             RaiseError("Cannot open effect windows: the WebView2 environment is unavailable.");
             return;
@@ -225,21 +244,21 @@ public sealed class WebViewWindowManager : IWebViewWindowManager
 
             if (entry is not null)
             {
-                entry.Window.RepositionTo(spec.Monitor);
+                entry.Surface.RepositionTo(spec.Monitor);
                 entry.ConfigJson = configJson;
-                entry.Window.TryPostWebMessage(configJson); // re-push the assignment to the live page
+                entry.Surface.TryPostWebMessage(configJson); // re-push the assignment to the live page
                 continue;
             }
 
-            var window = new EffectWindow(spec.Monitor, _logger);
+            var surface = _surfaceFactory(spec.Monitor);
             entry = new EffectEntry
             {
-                Window = window,
-                Target = new PostTarget(json => window.TryPostWebMessage(json)),
+                Surface = surface,
+                Target = new PostTarget(json => surface.TryPostWebMessage(json)),
                 ConfigJson = configJson,
             };
-            window.BridgeMessageReceived += (_, json) => DispatchBridgeMessage(id, json);
-            window.PageReady += (_, _) => OnEffectPageReady(id);
+            surface.BridgeMessageReceived += (_, json) => DispatchBridgeMessage(id, json);
+            surface.PageReady += (_, _) => OnEffectPageReady(id);
             lock (_gate)
             {
                 _effectWindows[id] = entry;
@@ -247,9 +266,9 @@ public sealed class WebViewWindowManager : IWebViewWindowManager
 
             try
             {
-                window.Show();
-                await window.InitializeWebViewAsync(_environment!);
-                _logger.LogInformation("Effect window created on {MonitorId} ({Name})", id, spec.Monitor.Name);
+                surface.Show();
+                await surface.InitializeWebViewAsync(_environment!);
+                _logger.LogInformation("Effect surface created on {MonitorId} ({Name})", id, spec.Monitor.Name);
             }
             catch (Exception ex)
             {
@@ -262,8 +281,8 @@ public sealed class WebViewWindowManager : IWebViewWindowManager
                         _effectWindows.Remove(id);
                     }
                 }
-                try { window.Close(); } catch { /* best effort */ }
-                RaiseError($"Failed to open the effect window on '{spec.Monitor.Name}': {ex.Message}", ex);
+                try { surface.Close(); } catch { /* best effort */ }
+                RaiseError($"Failed to open the effect surface on '{spec.Monitor.Name}': {ex.Message}", ex);
             }
         }
     }
@@ -293,7 +312,7 @@ public sealed class WebViewWindowManager : IWebViewWindowManager
                 _controlWindow?.TryPostWebMessage(json);
                 foreach (EffectEntry entry in SnapshotEffectEntries())
                 {
-                    entry.Window.TryPostWebMessage(json);
+                    entry.Surface.TryPostWebMessage(json);
                 }
             });
         }
@@ -346,7 +365,7 @@ public sealed class WebViewWindowManager : IWebViewWindowManager
                 // render-process recovery, and a stale one would resurrect the old effect.
                 entry.ConfigJson = json;
             }
-            dispatcher.InvokeAsync(() => entry.Window.TryPostWebMessage(json));
+            dispatcher.InvokeAsync(() => entry.Surface.TryPostWebMessage(json));
         }
     }
 
@@ -432,6 +451,45 @@ public sealed class WebViewWindowManager : IWebViewWindowManager
         DispatchBridgeMessage(WebViewHelpers.ControlSource, json);
 
     /// <summary>
+    /// Dev/QA seam (Epic 10 simulator editor): injects a bridge command exactly as if a hosted page had
+    /// sent it, so the simulator's editor drives source / effect / FPS / device changes through the real,
+    /// unmodified coordinator command handling. Marshals to the dispatcher; never throws (NFR5). Inert in
+    /// production (nothing calls it). Internal — used only by the simulator (same assembly).
+    /// </summary>
+    internal void RaiseSimulatorCommand(CommandEnvelope command, string sourceWindow)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+        void Raise()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+            try
+            {
+                CommandReceived?.Invoke(this, new BridgeCommandEventArgs { Command = command, SourceWindow = sourceWindow });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Simulator command {Type} failed", command.Type);
+            }
+        }
+
+        Dispatcher? dispatcher = _dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess())
+        {
+            Raise();
+        }
+        else
+        {
+            dispatcher.InvokeAsync(Raise);
+        }
+    }
+
+    /// <summary>
     /// Parses a raw web message and raises <see cref="CommandReceived"/>. The raise is
     /// deferred via the dispatcher so subscribers never run inside the WebView2
     /// WebMessageReceived callback — handlers may close/dispose webviews (e.g.
@@ -477,7 +535,7 @@ public sealed class WebViewWindowManager : IWebViewWindowManager
         {
             _effectWindows.TryGetValue(monitorId, out entry);
         }
-        entry?.Window.TryPostWebMessage(entry.ConfigJson);
+        entry?.Surface.TryPostWebMessage(entry.ConfigJson);
     }
 
     /// <summary>UI thread only. Removing + closing disposes the webview via the window's
@@ -498,7 +556,7 @@ public sealed class WebViewWindowManager : IWebViewWindowManager
         _logger.LogInformation("Closing effect window on {MonitorId}", monitorId);
         try
         {
-            entry.Window.Close();
+            entry.Surface.Close();
         }
         catch (Exception ex)
         {
@@ -516,7 +574,7 @@ public sealed class WebViewWindowManager : IWebViewWindowManager
         }
         foreach (EffectEntry entry in entries)
         {
-            try { entry.Window.Close(); }
+            try { entry.Surface.Close(); }
             catch (Exception ex) { _logger.LogWarning(ex, "Closing an effect window during dispose failed"); }
         }
 
@@ -565,10 +623,10 @@ public sealed class WebViewWindowManager : IWebViewWindowManager
         }
     }
 
-    /// <summary>An effect window plus its coalescing gate and latest windowConfig envelope.</summary>
+    /// <summary>An effect surface plus its coalescing gate and latest windowConfig envelope.</summary>
     private sealed class EffectEntry
     {
-        public required EffectWindow Window { get; init; }
+        public required IEffectSurfaceHost Surface { get; init; }
         public required PostTarget Target { get; init; }
 
         /// <summary>Latest serialized windowConfig envelope; UI thread only.</summary>

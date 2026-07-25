@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "name": "SIM_MONITORS",
+  "sourceMonitorId": "\\\\.\\SIM-DISPLAY1",
+  "monitors": [
+    {
+      "id": "\\\\.\\SIM-DISPLAY1",
+      "name": "Primary 1440p (sim)",
+      "x": 0,
+      "y": 0,
+      "width": 2560,
+      "height": 1440,
+      "isPrimary": true,
+      "pattern": "gradient",
+      "maxFps": 60
+    },
+    {
+      "id": "\\\\.\\SIM-DISPLAY2",
+      "name": "Right 1080p (sim)",
+      "x": 2560,
+      "y": 180,
+      "width": 1920,
+      "height": 1080,
+      "isPrimary": false,
+      "pattern": "bars",
+      "maxFps": 60
+    },
+    {
+      "id": "\\\\.\\SIM-DISPLAY3",
+      "name": "Top 1080p (sim)",
+      "x": 320,
+      "y": -1080,
+      "width": 1920,
+      "height": 1080,
+      "isPrimary": false,
+      "pattern": "testcard",
+      "maxFps": 60
+    }
+  ]
+}

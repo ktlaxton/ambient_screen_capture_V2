@@ -20,6 +20,27 @@
     <StartupObject>AmbientFx.Program</StartupObject>
   </PropertyGroup>
 
+  <!-- Epic 10 Layout Simulator (dev/QA only): SIMULATOR_ENABLED is defined ONLY in Debug, so every
+       #if SIMULATOR_ENABLED block (the whole src/Engine/Simulator tree + its DI override) is compiled
+       out of the signed Release/Velopack build. The Release publish in build.ps1 (-c Release) defines
+       no such constant, so no simulator IL ships. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <DefineConstants>$(DefineConstants);SIMULATOR_ENABLED</DefineConstants>
+  </PropertyGroup>
+
+  <!-- Simulator scenario fixtures, embedded for the dev-only Layout Simulator (Debug only). The
+       None Remove reclassifies them from the default None glob so there is no duplicate-item error.
+       The web effects manifest is embedded too (single source of truth for the simulator's effect
+       dropdown; the simulator is always built from the repo, so the list cannot drift) — Release
+       embeds none of this. -->
+  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+    <None Remove="Simulator\scenarios\*.json" />
+    <EmbeddedResource Include="Simulator\scenarios\*.json" />
+    <EmbeddedResource Include="..\..\web\src\effects\manifest.json"
+                      Link="Simulator\effects-manifest.json"
+                      LogicalName="AmbientFx.Simulator.effects-manifest.json" />
+  </ItemGroup>
+
   <ItemGroup>
     <None Include="wwwroot\**" CopyToOutputDirectory="PreserveNewest" />
     <!-- Corsair iCUE SDK v4 native client (redist from CorsairOfficial/cue-sdk v4.0.84).

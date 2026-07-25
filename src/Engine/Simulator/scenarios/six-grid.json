@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "name": "six-grid",
+  "sourceMonitorId": "\\\\.\\SIM-DISPLAY1",
+  "monitors": [
+    { "id": "\\\\.\\SIM-DISPLAY1", "name": "Top-Left (sim)", "x": 0, "y": 0, "width": 1920, "height": 1080, "isPrimary": true, "pattern": "gradient" },
+    { "id": "\\\\.\\SIM-DISPLAY2", "name": "Top-Center (sim)", "x": 1920, "y": 0, "width": 1920, "height": 1080, "isPrimary": false, "pattern": "bars" },
+    { "id": "\\\\.\\SIM-DISPLAY3", "name": "Top-Right (sim)", "x": 3840, "y": 0, "width": 1920, "height": 1080, "isPrimary": false, "pattern": "testcard" },
+    { "id": "\\\\.\\SIM-DISPLAY4", "name": "Bottom-Left (sim)", "x": 0, "y": 1080, "width": 1920, "height": 1080, "isPrimary": false, "pattern": "testcard" },
+    { "id": "\\\\.\\SIM-DISPLAY5", "name": "Bottom-Center (sim)", "x": 1920, "y": 1080, "width": 1920, "height": 1080, "isPrimary": false, "pattern": "gradient" },
+    { "id": "\\\\.\\SIM-DISPLAY6", "name": "Bottom-Right (sim)", "x": 3840, "y": 1080, "width": 1920, "height": 1080, "isPrimary": false, "pattern": "bars" }
+  ]
+}

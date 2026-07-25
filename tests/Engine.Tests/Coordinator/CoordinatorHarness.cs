@@ -55,7 +55,12 @@ internal sealed class CoordinatorHarness
     private readonly List<ApplicationSettings> _saved = new();
     private ProcessingOptions? _lastProcessingOptions;
 
-    public CoordinatorHarness()
+    /// <param name="monitorDetection">
+    /// Optional real <see cref="IMonitorDetectionService"/> wired into the coordinator instead of the
+    /// <see cref="MonitorDetection"/> mock (Epic 10 simulator integration test drives the real
+    /// <c>SimulatedMonitorDetectionService</c> through the unmodified coordinator). Null = use the mock.
+    /// </param>
+    public CoordinatorHarness(IMonitorDetectionService? monitorDetection = null)
     {
         Settings.Setup(s => s.LoadAsync()).ReturnsAsync(InitialSettings);
         Settings.Setup(s => s.GetDefaults()).Returns(() => new ApplicationSettings());
@@ -96,7 +101,7 @@ internal sealed class CoordinatorHarness
 
         Coordinator = new EngineCoordinator(
             Settings.Object,
-            MonitorDetection.Object,
+            monitorDetection ?? MonitorDetection.Object,
             Tray.Object,
             Autostart.Object,
             Hotkeys.Object,

@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "name": "vertical-stack",
+  "sourceMonitorId": "\\\\.\\SIM-DISPLAY1",
+  "monitors": [
+    { "id": "\\\\.\\SIM-DISPLAY1", "name": "Middle 1080p (sim)", "x": 0, "y": 0, "width": 1920, "height": 1080, "isPrimary": true, "pattern": "gradient" },
+    { "id": "\\\\.\\SIM-DISPLAY2", "name": "Below 1080p (sim)", "x": 0, "y": 1080, "width": 1920, "height": 1080, "isPrimary": false, "pattern": "bars" },
+    { "id": "\\\\.\\SIM-DISPLAY3", "name": "Above 1080p (sim)", "x": 0, "y": -1080, "width": 1920, "height": 1080, "isPrimary": false, "pattern": "testcard" }
+  ]
+}

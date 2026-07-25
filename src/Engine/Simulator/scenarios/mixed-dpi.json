@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "name": "mixed-dpi",
+  "sourceMonitorId": "\\\\.\\SIM-DISPLAY1",
+  "monitors": [
+    { "id": "\\\\.\\SIM-DISPLAY1", "name": "4K @150% (sim)", "x": 0, "y": 0, "width": 3840, "height": 2160, "isPrimary": true, "pattern": "gradient", "scale": 1.5 },
+    { "id": "\\\\.\\SIM-DISPLAY2", "name": "1080p @100% (sim)", "x": 3840, "y": 540, "width": 1920, "height": 1080, "isPrimary": false, "pattern": "bars", "scale": 1.0 }
+  ]
+}

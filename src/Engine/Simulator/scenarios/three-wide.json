@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "name": "3-wide",
+  "sourceMonitorId": "\\\\.\\SIM-DISPLAY2",
+  "monitors": [
+    { "id": "\\\\.\\SIM-DISPLAY1", "name": "Left 1080p (sim)", "x": 0, "y": 0, "width": 1920, "height": 1080, "isPrimary": false, "pattern": "bars" },
+    { "id": "\\\\.\\SIM-DISPLAY2", "name": "Center 1080p (sim)", "x": 1920, "y": 0, "width": 1920, "height": 1080, "isPrimary": true, "pattern": "gradient" },
+    { "id": "\\\\.\\SIM-DISPLAY3", "name": "Right 1080p (sim)", "x": 3840, "y": 0, "width": 1920, "height": 1080, "isPrimary": false, "pattern": "testcard" }
+  ]
+}

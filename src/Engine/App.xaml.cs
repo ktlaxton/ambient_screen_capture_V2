@@ -43,6 +43,21 @@ public partial class App : Application
         ConfigureLogging();
         RegisterGlobalExceptionHandlers();
 
+#if SIMULATOR_ENABLED
+        // Headless automation hook (Story 10.5): --simulator-render <scenario> [--out <dir>] renders one
+        // scenario to a deterministic PNG and exits, without spinning up the engine or any window.
+        using (var renderLoggerFactory = LoggerFactory.Create(b => b.AddSerilog(dispose: false)))
+        {
+            var renderedPath = Simulator.SimulatorRenderHook.TryRunFromArgs(e.Args, renderLoggerFactory.CreateLogger("SimRender"));
+            if (renderedPath is not null)
+            {
+                Log.Information("Simulator headless render complete: {Path}", renderedPath);
+                Shutdown();
+                return;
+            }
+        }
+#endif
+
         // Single instance: first process owns the mutex; later ones signal it to come forward and die.
         _mutex = new Mutex(initiallyOwned: true, MutexName, out var createdNew);
         _ownsMutex = createdNew;
@@ -61,11 +76,40 @@ public partial class App : Application
         {
             var services = new ServiceCollection();
             ConfigureServices(services);
+#if SIMULATOR_ENABLED
+            if (IsSimulatorRequested(e.Args))
+            {
+                Simulator.SimulatorComposition.Apply(services);
+                Log.Information("Layout Simulator enabled (--simulator/AMBIENTFX_SIMULATOR) — capture & monitor detection are simulated");
+            }
+#endif
             _provider = services.BuildServiceProvider();
 
             _coordinator = _provider.GetRequiredService<IEngineCoordinator>();
             var startMinimized = e.Args.Any(a => string.Equals(a, "--minimized", StringComparison.OrdinalIgnoreCase));
             await _coordinator.StartAsync(startMinimized);
+
+#if SIMULATOR_ENABLED
+            if (IsSimulatorRequested(e.Args))
+            {
+                // Story 10.6 — linked-window shutdown: in simulator mode the control window and the
+                // composite window are one session, so closing EITHER ends the whole thing. The control
+                // window's user-close surfaces as ControlWindowCloseRequested (production hides to tray);
+                // here it instead triggers the idempotent app shutdown. The SimulatorWindow handles its
+                // own close in SimulatorWindow.OnClosed. Production lifetime is untouched (this is behind
+                // the simulator gate). The manager already exists (built with the coordinator above), so
+                // resolving it here does not re-enter the surface-factory DI cycle.
+                if (_provider.GetService<IWebViewWindowManager>() is { } windowManager)
+                {
+                    windowManager.ControlWindowCloseRequested += (_, _) => Simulator.SimulatorShutdown.Request();
+                }
+
+                // Open the composite window eagerly (UI thread, after StartAsync wired the topology). The
+                // surface factory only fires when there is a target monitor, so a source-only / single-
+                // monitor (or Fallback) scenario would otherwise show nothing.
+                _ = _provider.GetService<Simulator.SimulatorWindow>();
+            }
+#endif
 
             _startupCompleted = true;
             Log.Information("AmbientFx started (minimized={Minimized})", startMinimized);
@@ -167,6 +211,18 @@ public partial class App : Application
         };
     }
 
+#if SIMULATOR_ENABLED
+    /// <summary>
+    /// Dev/QA runtime gate for the Epic 10 Layout Simulator: the simulated capture/monitor seams are
+    /// composed only when <c>--simulator</c> is passed (mirrors the <c>--minimized</c> parse above) or
+    /// the <c>AMBIENTFX_SIMULATOR</c> environment variable is set. The whole gate lives behind
+    /// <c>SIMULATOR_ENABLED</c>, so it is absent from the signed Release build.
+    /// </summary>
+    private static bool IsSimulatorRequested(string[] args) =>
+        args.Any(a => string.Equals(a, "--simulator", StringComparison.OrdinalIgnoreCase))
+        || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AMBIENTFX_SIMULATOR"));
+#endif
+
     private static void ConfigureServices(IServiceCollection services)
     {
         services.AddLogging(builder => builder.AddSerilog(dispose: false));
@@ -174,7 +230,12 @@ public partial class App : Application
         services.AddSingleton<IScreenCaptureService, ScreenCaptureService>();
         services.AddSingleton<IAudioCaptureService, AudioCaptureService>();
         services.AddSingleton<IDataProcessingService, DataProcessingService>();
-        services.AddSingleton<IWebViewWindowManager, WebViewWindowManager>();
+        // The window manager builds each effect surface through an injected factory (Story 10.2): the
+        // production factory returns a real per-monitor EffectWindow; the simulator overrides this
+        // registration with a composite-window viewport factory.
+        services.AddSingleton<IWebViewWindowManager>(sp => new WebViewWindowManager(
+            sp.GetRequiredService<ILogger<WebViewWindowManager>>(),
+            monitor => new EffectWindow(monitor, sp.GetRequiredService<ILogger<EffectWindow>>())));
         services.AddSingleton<ISettingsService, SettingsService>();
         services.AddSingleton<IMonitorDetectionService, MonitorDetectionService>();
         services.AddSingleton<ISystemTrayService, SystemTrayService>();

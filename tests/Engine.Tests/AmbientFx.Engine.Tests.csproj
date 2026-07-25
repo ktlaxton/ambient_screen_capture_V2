@@ -12,6 +12,12 @@
     <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
 
+  <!-- Epic 10: mirror the engine's Debug-only SIMULATOR_ENABLED so simulator test code compiles in
+       Debug (where the engine exposes the simulator types) and vanishes in Release (where it doesn't). -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <DefineConstants>$(DefineConstants);SIMULATOR_ENABLED</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\Engine\AmbientFx.csproj" />
   </ItemGroup>
